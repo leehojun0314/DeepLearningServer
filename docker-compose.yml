@@ -1,9 +1,9 @@
 services:
-  deeplearningwindows:
-    image: ${DOCKER_REGISTRY-}deeplearningwindows
+  deeplearningserver:
+    image: ${DOCKER_REGISTRY-}deeplearningserver
     build:
       context: .
-      dockerfile: DeepLearningWindows\Dockerfile
+      dockerfile: DeepLearningServer\Dockerfile
     depends_on:
       - "mongo"
   mongo:
