@@ -36,6 +36,7 @@ public class SingletonAiDuo
         if (parameterData.ImageSize == ImageSize.Medium)
         {
             _instanceMedium = new TrainingAi(parameterData, serverSettings);
+            
             return _instanceMedium;
         }
         if (parameterData.ImageSize == ImageSize.Large)

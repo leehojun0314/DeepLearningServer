@@ -38,7 +38,7 @@ public class TrainingRecord
     // 기타 필요한 결과나 상태
     [BsonRepresentation(BsonType.String)]
     public TrainingStatus Status { get; set; } = TrainingStatus.Stanby; // "Running", "Completed", "Failed" 등
-    public List<ProgressEntry> ProgressHistory { get; set; } = new();
+    public List<ProgressHistory> ProgressHistory { get; set; } = new();
     
     public Dictionary<string, float> Lables { get; set; } = new();
 
@@ -91,11 +91,3 @@ public class ClassifierParams
     public bool EnableHistogramEqualization { get; set; }
     public int BatchSize { get; set; }
 }
-public class ProgressEntry
-{
-    public bool IsTraining { get; set; }
-    public double Progress { get; set; }
-    public double BestIteration { get; set; }
-    public object LearningRateParameters { get; set; }
-    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
-}  

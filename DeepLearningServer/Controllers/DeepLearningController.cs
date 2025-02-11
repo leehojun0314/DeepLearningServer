@@ -94,7 +94,7 @@ public class DeepLearningController : ControllerBase
                         { "LearningRate", learningRateParameters }
                     };
 
-                        var newEntry = new ProgressEntry
+                        var newEntry = new ProgressHistory
                         {
                             IsTraining = isTraining,
                             Progress = progress,
@@ -157,7 +157,30 @@ public class DeepLearningController : ControllerBase
             throw;
         }
     }
+    [HttpGet("resume/{imageSize}")]
+    public IActionResult ResumeTraining([FromRoute] ImageSize imageSize)
+    {
+        try
+        {
+            _mongoDbService.InsertLog("Stop training called", LogLevel.Information);
+            var instance = SingletonAiDuo.GetInstance(imageSize);
 
+            if (instance == null)
+            {
+                _mongoDbService.InsertLog("Stop training error: Instance is null.", LogLevel.Error);
+                return BadRequest(new NewRecord("Instance is null."));
+            }
+
+            instance.StopTraining();
+            _mongoDbService.InsertLog("Training stopped", LogLevel.Debug);
+            return Ok("Processing completed successfully.");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
+    }
     [HttpGet("status/{imageSize}")]
     public IActionResult GetStatus([FromRoute] ImageSize imageSize)
     {
@@ -185,7 +208,7 @@ public class DeepLearningController : ControllerBase
         return Ok(trainingResult);
     }
 
-    [HttpGet("dispose/{imageSize}")]
+    [HttpDelete("dispose/{imageSize}")]
     public IActionResult DisposeInstance([FromRoute] ImageSize imageSize)
     {
         var instance = SingletonAiDuo.GetInstance(imageSize);
@@ -201,13 +224,13 @@ public class DeepLearningController : ControllerBase
     [HttpGet("classify/{imageSize}")]
     public IActionResult Classify([FromBody] string[] imagePaths, [FromRoute] ImageSize imageSize)
     {
-        Console.WriteLine($"ImagePaths: {imagePaths}");
-        var instance = SingletonAiDuo.GetInstance(imageSize);
-        if(instance == null)
-        {
-            return BadRequest("Invalid image size.");
-        }
-        instance.Classify(imagePaths);
+        //Console.WriteLine($"ImagePaths: {imagePaths}");
+        //var instance = SingletonAiDuo.GetInstance(imageSize);
+        //if(instance == null)
+        //{
+        //    return BadRequest("Invalid image size.");
+        //}
+        //instance.Classify(imagePaths);
         return Ok("OK");
     }
 

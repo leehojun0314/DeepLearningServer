@@ -11,8 +11,8 @@ namespace DeepLearningServer.Classes;
 
 public class TrainingAi
 {
-    public delegate void TrainCallback(bool isTraining, float progress, int bestIteration,
-        float[] learningRateParameters);
+    public delegate void TrainCallback(bool isTraining, float progress, int bestIteration
+        );
 
     private readonly ServerSettings serverSettings;
 
@@ -175,8 +175,9 @@ public class TrainingAi
         while (true)
         {
             classifier.WaitForIterationCompletion();
-            cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration,
-                classifier.LearningRateParameters);
+            cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration
+                );
+
             if (classifier.IsTraining() == false) break;
         }
         // classifier.WaitForTrainingCompletion();
@@ -185,26 +186,6 @@ public class TrainingAi
     }
 
     #endregion
-    public EClassificationResult[] Classify(string[] imagePaths)
-    {
-        if(imagePaths != null && imagePaths.Length > 0 && classifier != null && classifier.HasTrainingModel())
-        {
-            EBaseROI[] images = new EBaseROI[imagePaths.Length];
-
-            for (int i = 0; i < imagePaths.Length; i++)
-            {
-                EImageBW8 eImage = new EImageBW8();
-                eImage.Load(imagePaths[i]); // 로드
-                images[i] = eImage;         // EBaseROI 배열에 저장
-            }
-
-            return classifier.Classify(ref images);
-        }
-        else
-        {
-            throw new Exception("Invalid image list");
-        }
-    }
     public void StopTraining()
     {
         if (classifier != null)
@@ -217,6 +198,12 @@ public class TrainingAi
             throw new Exception("No classifier was trained");
         }
     }
+    //public void ResumeTraining()
+    //{
+    //    if(classifier != null)
+    //    {
+    //    }
+    //}
 
     public Dictionary<string, float> GetStatus()
     {

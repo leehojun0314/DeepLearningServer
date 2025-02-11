@@ -85,7 +85,7 @@ public class MongoDbService
 
         Console.WriteLine($"Matched: {result.MatchedCount}, Modified: {result.ModifiedCount}");
     }
-    public Task PushProgressEntry(ObjectId recordId, ProgressEntry newEntry)
+    public Task PushProgressEntry(ObjectId recordId, ProgressHistory newEntry)
     {
         if (_trainingCollection == null)
             throw new NullReferenceException("TrainingCollection is null");

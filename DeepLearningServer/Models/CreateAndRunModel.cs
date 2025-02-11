@@ -23,6 +23,8 @@ public class CreateAndRunModel
     [DefaultValue(50)]
     public int Iterations { get; set; } = 50;
 
+    [DefaultValue("D:/trainingModel.edlmodel")]
+    public string TrainingModelClientPath { get; set; } = "D:/trainingModel.edlmodel";
     // 이하부터는 기존에 하나씩 있던 파라미터들을 하위 객체로 정리
     public GeometryParamsDto Geometry { get; set; } = new();
     public ColorParamsDto Color { get; set; } = new();

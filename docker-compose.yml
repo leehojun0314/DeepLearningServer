@@ -4,10 +4,3 @@ services:
     build:
       context: .
       dockerfile: DeepLearningServer\Dockerfile
-    depends_on:
-      - "mongo"
-  mongo:
-    image: mongo
-    container_name: mongo
-    ports:
-      - "27017:27017"

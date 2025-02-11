@@ -2,6 +2,8 @@ using DeepLearningServer.Classes;
 using DeepLearningServer.Services;
 using DeepLearningServer.Settings;
 using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore;
+using System;
 
 public class Program
 {
@@ -14,6 +16,11 @@ public class Program
         builder.Configuration.AddEnvironmentVariables();
         builder.Services.Configure<ServerSettings>(builder.Configuration.GetSection("ServerSettings"));
         builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("DatabaseSettings"));
+
+        // MSSQL 데이터베이스 연결 설정
+        builder.Services.AddDbContext<DbContext>(options =>
+            options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
+        );
         builder.Services.AddSingleton<MongoDbService>(sp =>
         {
             var settings = sp.GetRequiredService<IOptions<MongoDbSettings>>();
@@ -28,10 +35,10 @@ public class Program
             options.SupportNonNullableReferenceTypes();
             options.UseAllOfToExtendReferenceSchemas();
         });
-        //builder.WebHost.ConfigureKestrel(options =>
-        //{
-        //    options.ListenAnyIP(8080);
-        //});
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.ListenAnyIP(8080);
+        });
 
         var app = builder.Build();
 
