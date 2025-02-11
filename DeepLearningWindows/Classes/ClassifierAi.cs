@@ -1,7 +1,7 @@
 ﻿using Euresys.Open_eVision;
 using Euresys.Open_eVision.EasyDeepLearning;
 
-namespace DeepLearningWindows.Classes
+namespace DeepLearningServer.Classes
 {
     public class ClassifierAi
     {

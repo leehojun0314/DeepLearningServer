@@ -1,4 +1,4 @@
-namespace DeepLearningWindows
+namespace DeepLearningServer
 {
     public class WeatherForecast
     {

@@ -15,19 +15,19 @@ EXPOSE 8081
 FROM mcr.microsoft.com/dotnet/sdk:8.0-windowsservercore-ltsc2019 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["DeepLearningWindows/DeepLearningWindows.csproj", "DeepLearningWindows/"]
-RUN dotnet restore "./DeepLearningWindows/DeepLearningWindows.csproj"
+COPY ["DeepLearningServer/DeepLearningServer.csproj", "DeepLearningServer/"]
+RUN dotnet restore "./DeepLearningServer/DeepLearningServer.csproj"
 COPY . .
-WORKDIR "/src/DeepLearningWindows"
-RUN dotnet build "./DeepLearningWindows.csproj" -c %BUILD_CONFIGURATION% -o /app/build
+WORKDIR "/src/DeepLearningServer"
+RUN dotnet build "./DeepLearningServer.csproj" -c %BUILD_CONFIGURATION% -o /app/build
 
 # 이 스테이지는 최종 스테이지에 복사할 서비스 프로젝트를 게시하는 데 사용됩니다.
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./DeepLearningWindows.csproj" -c %BUILD_CONFIGURATION% -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./DeepLearningServer.csproj" -c %BUILD_CONFIGURATION% -o /app/publish /p:UseAppHost=false
 
 # 이 스테이지는 프로덕션에서 사용되거나 VS에서 일반 모드로 실행할 때 사용됩니다(디버그 구성을 사용하지 않는 경우 기본값).
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "DeepLearningWindows.dll"]
+ENTRYPOINT ["dotnet", "DeepLearningServer.dll"]

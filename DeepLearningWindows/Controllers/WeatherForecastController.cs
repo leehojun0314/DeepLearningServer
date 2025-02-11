@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace DeepLearningWindows.Controllers
+namespace DeepLearningServer.Controllers
 {
     [ApiController]
     [Route("[controller]")]
