@@ -1,54 +1,61 @@
-﻿using MongoDB.Bson;
-using MongoDB.Bson.Serialization.Attributes;
-
-namespace DeepLearningServer.Models;
-
-public class LogRecord
+﻿using System;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+namespace DeepLearningServer.Models
 {
-    // 실제 DB에는 문자열이 들어갑니다
-    [BsonElement("Level")] private string _levelString = "Info";
+    
 
-    [BsonId] public ObjectId Id { get; set; }
 
-    public string Message { get; set; } = string.Empty;
-
-    [BsonIgnore] // 이 속성은 DB 필드에 직접 매핑되지 않도록
-    public LogLevel Level
+    public class LogRecord
     {
-        get => StringToEnum(_levelString);
-        set => _levelString = EnumToString(value);
-    }
+        [Key]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+        public int Id { get; set; }
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public string Message { get; set; } = string.Empty;
 
-    // 변환 로직
-    private static string EnumToString(LogLevel logLevel)
-    {
-        return logLevel switch
+        [Required]
+        [Column("Level")]
+        public string LevelString { get; set; } = "Info";
+
+        [NotMapped]
+        public LogLevel Level
         {
-            LogLevel.Information => "Info",
-            LogLevel.Error => "Error",
-            LogLevel.Debug => "Debug",
-            LogLevel.Trace => "Trace",
-            LogLevel.Warning => "Warning",
-            LogLevel.Critical => "Critical",
-            LogLevel.None => "None",
-            _ => "Info"
-        };
-    }
+            get => StringToEnum(LevelString);
+            set => LevelString = EnumToString(value);
+        }
 
-    private static LogLevel StringToEnum(string levelString)
-    {
-        return levelString switch
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        private static string EnumToString(LogLevel logLevel)
         {
-            "Info" => LogLevel.Information,
-            "Error" => LogLevel.Error,
-            "Debug" => LogLevel.Debug,
-            "Trace" => LogLevel.Trace,
-            "Warning" => LogLevel.Warning,
-            "Critical" => LogLevel.Critical,
-            "None" => LogLevel.None,
-            _ => LogLevel.Information
-        };
+            return logLevel switch
+            {
+                LogLevel.Trace => "Trace",
+                LogLevel.Debug => "Debug",
+                LogLevel.Information => "Info",
+                LogLevel.Warning => "Warning",
+                LogLevel.Error => "Error",
+                LogLevel.Critical => "Critical",
+                LogLevel.None => "None",
+                _ => "Info"
+            };
+        }
+
+        private static LogLevel StringToEnum(string levelString)
+        {
+            return levelString switch
+            {
+                "Trace" => LogLevel.Trace,
+                "Debug" => LogLevel.Debug,
+                "Info" => LogLevel.Information,
+                "Warning" => LogLevel.Warning,
+                "Error" => LogLevel.Error,
+                "Critical" => LogLevel.Critical,
+                "None" => LogLevel.None,
+                _ => LogLevel.Information
+            };
+        }
     }
 }
+

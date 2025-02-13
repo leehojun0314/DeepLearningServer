@@ -16,27 +16,24 @@ namespace DeepLearningServer.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class DeepLearningController : ControllerBase
+public class DeepLearningController(IOptions<ServerSettings> serverSettings,
+    IMapper mapper, MssqlDbService mssqlDbService) : ControllerBase
 {
-    private readonly MongoDbService _mongoDbService;
-    private readonly ServerSettings _serverSettings;
-    private readonly IMapper _mapper;
+    //private readonly MongoDbService _mongoDbService;
+    private readonly ServerSettings _serverSettings = serverSettings.Value;
+    private readonly MssqlDbService _mssqlDbService = mssqlDbService;
+    private readonly IMapper _mapper = mapper;
 
-    private ObjectId _recordId;
-
-    // Constructor injection for ServerSettings
-    public DeepLearningController(IOptions<ServerSettings> serverSettings, MongoDbService mongoDbService,
-        IMapper mapper)
-    {
-        _serverSettings = serverSettings.Value;
-        _mongoDbService = mongoDbService;
-        _mapper = mapper;
-    }
+    private int _recordId;
 
     [HttpPost("run")]
     public async Task<IActionResult> CreateToolAndRun([FromBody] CreateAndRunModel parameterData)
     {
-        _mongoDbService.InsertLog("create tool and run called", LogLevel.Information);
+        try
+        {
+            
+        //_mssqlDbService.InsertLogAsync("create tool and run called", LogLevel.Information);
+        await _mssqlDbService.InsertLogAsync("create tool and run called", LogLevel.Information);
         // Validate required fields
         if (string.IsNullOrWhiteSpace(parameterData.RecipeId))
             return BadRequest(new NewRecord("RecipeId is required."));
@@ -48,18 +45,23 @@ public class DeepLearningController : ControllerBase
         //check if instance is already exist
         if (SingletonAiDuo.GetInstance(parameterData.ImageSize) != null)
         {
-            _mongoDbService.InsertLog("Instance already exists", LogLevel.Debug);
+            //_mssqlDbService.InsertLogAsync("Instance already exists", LogLevel.Debug);
+            if (SingletonAiDuo.GetInstance(parameterData.ImageSize).IsTraining())
+            {
+                return BadRequest("The tool is already running.");
+            }
             return BadRequest(new NewRecord("Instance already exists."));
         }
-        await _mongoDbService.InsertLog("Initializing instance", LogLevel.Debug);
+        //await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
+        await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
         var instance = SingletonAiDuo.CreateInstance(parameterData, _serverSettings);
-        await _mongoDbService.InsertLog("Initialized instance", LogLevel.Debug);
+        await _mssqlDbService.InsertLogAsync("Initialized instance", LogLevel.Debug);
 
 
-        await _mongoDbService.InsertLog("Setting parameters", LogLevel.Debug);
+        await _mssqlDbService.InsertLogAsync("Setting parameters", LogLevel.Debug);
         instance.SetParameters();
-        await _mongoDbService.InsertLog("Parameters set", LogLevel.Debug);
-        await _mongoDbService.InsertLog("Start model traning", LogLevel.Information);
+        await _mssqlDbService.InsertLogAsync("Parameters set", LogLevel.Debug);
+        await _mssqlDbService.InsertLogAsync("Start model traning", LogLevel.Information);
         instance.recordId = record.Id;
         _recordId = record.Id;
         Console.WriteLine("Record id: " + record.Id);
@@ -70,85 +72,100 @@ public class DeepLearningController : ControllerBase
                 // 이 부분에서 Euresys 관련 작업 실행
                 try
                 {
-                    _mongoDbService.InsertLog("Loading Images", LogLevel.Debug).GetAwaiter().GetResult();
+                    _mssqlDbService.InsertLogAsync("Loading Images", LogLevel.Debug).GetAwaiter().GetResult();
                     Console.WriteLine("Loading images...");
                     int numImages = instance.LoadImages();
                     Console.WriteLine($"Loaded {numImages} images");
-                    _mongoDbService.InsertLog($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
+                    _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
 
                     // Train 메서드도 STA 환경에서 실행됨
-                    instance.Train((isTraining, progress, bestIteration, learningRateParameters) =>
+                    instance.Train((isTraining, progress, bestIteration) =>
                     {
                         Console.WriteLine($"is training: {isTraining}");
                         Console.WriteLine($"progress: {progress}");
                         Console.WriteLine($"best iteration: {bestIteration}");
-                        Console.WriteLine($"learning rate: {learningRateParameters}");
-                        _mongoDbService.InsertLog("training ", LogLevel.Trace).GetAwaiter().GetResult();
-                        _mongoDbService.InsertLog($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
+                        _mssqlDbService.InsertLogAsync("training ", LogLevel.Trace).GetAwaiter().GetResult();
+                        _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
 
                         var updates = new Dictionary<string, object>
                     {
                         { "Status", TrainingStatus.Running },
                         { "Progress", progress },
-                        { "BestIteration", bestIteration },
-                        { "LearningRate", learningRateParameters }
+                        { "BestIteration", bestIteration }
                     };
 
-                        var newEntry = new ProgressHistory
+                        var newEntry = new ProgressEntry
                         {
                             IsTraining = isTraining,
-                            Progress = progress,
+                            Progress = isTraining ? progress : 1,
                             BestIteration = bestIteration,
-                            LearningRateParameters = learningRateParameters,
                             Timestamp = DateTime.UtcNow
                         };
 
-                        _mongoDbService.PartialUpdateTraining(updates, record.Id).GetAwaiter().GetResult();
-                        _mongoDbService.PushProgressEntry(record.Id, newEntry).GetAwaiter().GetResult();
-                    }).GetAwaiter().GetResult();
+                        //_mongoDbService.PartialUpdateTraining(updates, record.Id).GetAwaiter().GetResult();
+                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
 
-                    _mongoDbService.InsertLog("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
-                    _mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Completed } }, record.Id).GetAwaiter().GetResult();
+                        //_mssqlDbService.PushProgressEntry(record.Id, newEntry).GetAwaiter().GetResult();
+                        _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
+                    }).GetAwaiter().GetResult();
+                    string savePath = $@"D:\Models\{parameterData.RecipeId}\{parameterData.ProcessId}\{DateTime.UtcNow}\";
+                    instance.SaveModel(savePath + "trainingModel.edltool");
+                    //instance.SaveSettings(savePath + "trainingsettings.settings");
+                    instance.StopTraining();
+                    SingletonAiDuo.Reset(parameterData.ImageSize);
+                    _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
+                    //_mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Completed } }, record.Id).GetAwaiter().GetResult();
+                    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Completed }, { "EndTime" , DateTime.UtcNow } }).GetAwaiter().GetResult();
                     Dictionary<string, float> trainingResult = instance.GetTrainingResult();
-                    _mongoDbService.UpdateLablesById(record.Id, trainingResult).GetAwaiter().GetResult();
+                    //_mongoDbService.UpdateLablesById(record.Id, trainingResult).GetAwaiter().GetResult();
+                    
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine(e);
-                    _mongoDbService.InsertLog($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
-                    _mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }, _recordId).GetAwaiter().GetResult();
+                    _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
+                    //_mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }, _recordId).GetAwaiter().GetResult();
                     SingletonAiDuo.Reset(parameterData.ImageSize);
                     throw;
                 }
             });
         });
-        _mongoDbService.InsertTraining(record).GetAwaiter();
+        //_mongoDbService.InsertTraining(record).GetAwaiter();
+        await _mssqlDbService.InsertTrainingAsync(record);
         Console.WriteLine("Training record inserted");
         Console.WriteLine($"Record id: {record.Id}");
+
         return Ok(new
         {
             Message = "Training initialized successfully.",
             TrainingId = record.Id.ToString()
         });
+        }
+            catch(Exception error)
+        {
+            Console.WriteLine(error.Message);
+            _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);
+            throw;
+        }
     }
 
     [HttpDelete("stop/{imageSize}")]
-    public IActionResult StopTraining([FromRoute] ImageSize imageSize)
+    public async Task<IActionResult> StopTraining([FromRoute] ImageSize imageSize)
     {
         try
         {
-            _mongoDbService.InsertLog("Stop training called", LogLevel.Information);
+            await _mssqlDbService.InsertLogAsync("Stop training called", LogLevel.Information);
             var instance = SingletonAiDuo.GetInstance(imageSize);
 
             if (instance == null)
             {
-                _mongoDbService.InsertLog("Stop training error: Instance is null.", LogLevel.Error);
+              await  _mssqlDbService.InsertLogAsync("Stop training error: Instance is null.", LogLevel.Error);
                 return BadRequest(new NewRecord("Instance is null."));
             }
 
             instance.StopTraining();
             SingletonAiDuo.Reset(imageSize);
-            _mongoDbService.InsertLog("Training stopped", LogLevel.Debug);
+            await _mssqlDbService.InsertLogAsync("Training stopped", LogLevel.Debug);
             return Ok("Processing completed successfully.");
         }
         catch (Exception e)
@@ -157,43 +174,20 @@ public class DeepLearningController : ControllerBase
             throw;
         }
     }
-    [HttpGet("resume/{imageSize}")]
-    public IActionResult ResumeTraining([FromRoute] ImageSize imageSize)
-    {
-        try
-        {
-            _mongoDbService.InsertLog("Stop training called", LogLevel.Information);
-            var instance = SingletonAiDuo.GetInstance(imageSize);
-
-            if (instance == null)
-            {
-                _mongoDbService.InsertLog("Stop training error: Instance is null.", LogLevel.Error);
-                return BadRequest(new NewRecord("Instance is null."));
-            }
-
-            instance.StopTraining();
-            _mongoDbService.InsertLog("Training stopped", LogLevel.Debug);
-            return Ok("Processing completed successfully.");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
-    }
+    
     [HttpGet("status/{imageSize}")]
-    public IActionResult GetStatus([FromRoute] ImageSize imageSize)
+    public async Task<IActionResult> GetStatus([FromRoute] ImageSize imageSize)
     {
-        _mongoDbService.InsertLog("Get status called", LogLevel.Information);
+        await _mssqlDbService.InsertLogAsync("Get status called", LogLevel.Information);
         var instance = SingletonAiDuo.GetInstance(imageSize);
         if (instance == null)
         {
-            _mongoDbService.InsertLog("GetStatus error: Instance is null.", LogLevel.Error);
+            await _mssqlDbService.InsertLogAsync("GetStatus error: Instance is null.", LogLevel.Error);
             return BadRequest(new NewRecord("Instance is null."));
         }
 
         Dictionary<string, float> status = instance.GetStatus();
-        _mongoDbService.InsertLog("status retrieved", LogLevel.Debug);
+        await _mssqlDbService.InsertLogAsync("status retrieved", LogLevel.Debug);
         Console.WriteLine(status);
 
         return Ok(status);
@@ -221,18 +215,16 @@ public class DeepLearningController : ControllerBase
         return Ok("The tool disposed successfully");
     }
 
-    [HttpGet("classify/{imageSize}")]
-    public IActionResult Classify([FromBody] string[] imagePaths, [FromRoute] ImageSize imageSize)
-    {
-        //Console.WriteLine($"ImagePaths: {imagePaths}");
-        //var instance = SingletonAiDuo.GetInstance(imageSize);
-        //if(instance == null)
-        //{
-        //    return BadRequest("Invalid image size.");
-        //}
-        //instance.Classify(imagePaths);
-        return Ok("OK");
-    }
+    //[HttpGet("classify/{imageSize}")]
+    //public IActionResult Classify([FromBody] string[] imagePaths, [FromRoute] ImageSize imageSize) =>
+    //    //Console.WriteLine($"ImagePaths: {imagePaths}");
+    //    //var instance = SingletonAiDuo.GetInstance(imageSize);
+    //    //if(instance == null)
+    //    //{
+    //    //    return BadRequest("Invalid image size.");
+    //    //}
+    //    //instance.Classify(imagePaths);
+    //    Ok("OK");
 
     [HttpGet("save/{imageSize}")]
     public IActionResult SaveModel([FromRoute] ImageSize imageSize, [FromQuery] string modelFilePath, [FromQuery] string settingsFilePath)
@@ -241,7 +233,7 @@ public class DeepLearningController : ControllerBase
         {
             var instance = SingletonAiDuo.GetInstance(imageSize);
             instance.SaveModel(modelFilePath);
-            instance.SaveSettings(settingsFilePath);
+            //instance.SaveSettings(settingsFilePath);
             return Ok("OK");
         }
         catch (Exception e)
@@ -260,7 +252,7 @@ public class DeepLearningController : ControllerBase
             if (instance != null)
             {
                 instance.LoadModel(modelFilePath);
-                instance.LoadSettings(settingsFilePath);
+                //instance.LoadSettings(settingsFilePath);
                 return Ok("Ok");
             }
             else
@@ -279,7 +271,7 @@ public class DeepLearningController : ControllerBase
     {
         var tcs = new TaskCompletionSource<bool>();
 
-        Thread staThread = new Thread(() =>
+        Thread staThread = new(() =>
         {
             try
             {

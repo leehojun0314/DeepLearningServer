@@ -1,6 +1,0 @@
-services:
-  deeplearningserver:
-    image: ${DOCKER_REGISTRY-}deeplearningserver
-    build:
-      context: .
-      dockerfile: DeepLearningServer\Dockerfile

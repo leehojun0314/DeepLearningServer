@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace DeepLearningServer.Models
 {
-    public class ProgressHistory
+    public class ProgressEntry
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
@@ -17,6 +17,6 @@ namespace DeepLearningServer.Models
 
         // 외래 키 설정
         public int TrainingRecordId { get; set; }
-        public TrainingRecordModel TrainingRecord { get; set; }
+        public TrainingRecord TrainingRecord { get; set; }
     }
 }

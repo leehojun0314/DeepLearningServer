@@ -1,9 +1,8 @@
 using DeepLearningServer.Classes;
 using DeepLearningServer.Services;
 using DeepLearningServer.Settings;
-using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
-using System;
+using Microsoft.Extensions.Options;
 
 public class Program
 {
@@ -15,16 +14,29 @@ public class Program
         // 환경 변수 추가 등 설정
         builder.Configuration.AddEnvironmentVariables();
         builder.Services.Configure<ServerSettings>(builder.Configuration.GetSection("ServerSettings"));
-        builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("DatabaseSettings"));
+        //builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("DatabaseSettings"));
+        builder.Services.Configure<SqlDbSettings>(
+    builder.Configuration.GetSection("DatabaseSettings")
+);
+        var connectionString = builder.Configuration.GetSection("DatabaseSettings:ConnectionStringMS").Value;
 
         // MSSQL 데이터베이스 연결 설정
-        builder.Services.AddDbContext<DbContext>(options =>
-            options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"))
-        );
-        builder.Services.AddSingleton<MongoDbService>(sp =>
+        builder.Services.AddDbContext<AppDbContext>(options =>
         {
-            var settings = sp.GetRequiredService<IOptions<MongoDbSettings>>();
-            return new MongoDbService(settings);
+            var dbSettings = builder.Configuration.GetSection("DatabaseSettings").Get<SqlDbSettings>();
+            options.UseSqlServer(dbSettings.ConnectionStringMS,
+                sqlOptions => sqlOptions.MigrationsAssembly(typeof(AppDbContext).Assembly.GetName().Name));
+        });
+        //builder.Services.AddSingleton<MongoDbService>(sp =>
+        //{
+        //    var settings = sp.GetRequiredService<IOptions<MongoDbSettings>>();
+        //    return new MongoDbService(settings);
+        //});
+        builder.Services.AddSingleton<MssqlDbService>(sp =>
+        {
+            var settings = sp.GetRequiredService<IOptions<SqlDbSettings>>();
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            return new MssqlDbService(settings, configuration);
         });
         builder.Services.AddAutoMapper(typeof(TrainingMappingProfile));
         builder.Services.AddControllers();

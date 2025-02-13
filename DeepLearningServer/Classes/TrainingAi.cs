@@ -23,7 +23,7 @@ public class TrainingAi
     private readonly CreateAndRunModel? parameterData;
 
     private readonly string? processId;
-    public ObjectId recordId;
+    public int recordId;
     private EClassificationDataset? testDataset;
     private EClassificationDataset? trainingDataset;
     private EClassificationDataset? tvDataset;
@@ -35,16 +35,9 @@ public class TrainingAi
     {
 
         Console.WriteLine("Checking license..");
-        try
-        {
-            bool hasLicense = Euresys.Open_eVision.Easy.CheckLicense(Features.EasyClassify);
-            Console.WriteLine($"Has license: {hasLicense}");
-            if (!hasLicense) throw new Exception("No license found");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"Error on checking license: {e.Message}");
-        }
+        bool hasLicense = Easy.CheckLicense(Features.EasyClassify);
+        Console.WriteLine($"Has license: {hasLicense}");
+        if (!hasLicense) throw new Exception("No license found");
 
         this.serverSettings = serverSettings;
         this.parameterData = parameterData;
@@ -57,7 +50,6 @@ public class TrainingAi
         classifier.EnableGPU = true;
         categories = parameterData.Categories;
         processId = parameterData.ProcessId;
-
         Console.WriteLine($"Number of GPUs: {classifier.NumGPUs}");
     }
 
@@ -170,6 +162,7 @@ public class TrainingAi
         if (classifier == null) throw new Exception("Classifier is null");
         Console.WriteLine("Started training");
         var activeDevice = classifier.GetActiveDevice();
+       
         Console.WriteLine($"active device name: {activeDevice.Name} /n type: {activeDevice.DeviceType}");
         classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
         while (true)
@@ -178,7 +171,8 @@ public class TrainingAi
             cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration
                 );
 
-            if (classifier.IsTraining() == false) break;
+            if (classifier.IsTraining() == false){
+                break; }
         }
         // classifier.WaitForTrainingCompletion();
 
@@ -213,12 +207,25 @@ public class TrainingAi
             Console.WriteLine($"Learning rate: {learningRateParameters}");
             Console.WriteLine($"LearningRateParameters Length: {learningRateParameters.Length}");
 
-            Dictionary<string, float> dictionary = new();
+            Dictionary<string, float> dictionary = new Dictionary<string, float>();
+            dictionary.Add("isTraining", classifier.IsTraining() ? 1 : 0);
+            dictionary.Add("bestIteration", classifier.BestIteration);
+            dictionary.Add("currentTrainingProgression", classifier.CurrentTrainingProgression);
+            dictionary.Add("currentTrainingNumIterations", classifier.CurrentTrainingNumIterations);
+            Dictionary<string, float> resultDictionary = GetTrainingResult();
+
             // 배열 길이 확인
             for (var i = 0; i < learningRateParameters.Length; i++)
             {
                 Console.WriteLine($"Learning rate parameter {i}: {learningRateParameters[i]}");
                 dictionary.Add($"learningRateParameters{i}", learningRateParameters[i]);
+            }
+            foreach (var kvp in resultDictionary)
+            {
+                if (dictionary.ContainsKey(kvp.Key))
+                    dictionary[kvp.Key] += kvp.Value; // 기존 값에 더하기
+                else
+                    dictionary[kvp.Key] = kvp.Value;  // 새로운 키 추가
             }
 
             return dictionary;
@@ -228,7 +235,10 @@ public class TrainingAi
             throw new Exception("No classifier was trained");
         }
     }
-
+    public bool IsTraining()
+    {
+        return classifier?.IsTraining() ?? false;
+    }
     public Dictionary<string, float> GetTrainingResult()
     {
         Console.WriteLine("Get training result called");
@@ -295,20 +305,20 @@ public class TrainingAi
         classifier?.SaveTrainingModel(filePath);
     }
 
-    public void SaveSettings(string filePath)
-    {
-        classifier?.SaveSettings(filePath);
-    }
+    //public void SaveSettings(string filePath)
+    //{
+    //    classifier?.SaveSettings(filePath);
+    //}
 
     public void LoadModel(string filePath)
     {
         classifier?.LoadTrainingModel(filePath);
     }
 
-    public void LoadSettings(string filePath)
-    {
-        classifier?.LoadSettings(filePath);
-    }
+    //public void LoadSettings(string filePath)
+    //{
+    //    classifier?.LoadSettings(filePath);
+    //}
 
     ~TrainingAi()
     {

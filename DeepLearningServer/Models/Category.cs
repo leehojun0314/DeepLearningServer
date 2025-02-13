@@ -3,17 +3,18 @@ using System.ComponentModel.DataAnnotations;
 
 namespace DeepLearningServer.Models
 {
-    public class Label
+    public class Category
     {
         [Key]
         [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int Id { get; set; }
 
-        public string Key { get; set; } = string.Empty;
-        public float Value { get; set; }
+        [Required]
+        [Column(TypeName= "nvarchar(100)")]
+        public string Name { get; set; } = string.Empty;
 
         // 외래 키 설정
         public int TrainingRecordId { get; set; }
-        public TrainingRecordModel TrainingRecord { get; set; }
+        public TrainingRecord TrainingRecord { get; set; }
     }
 }
