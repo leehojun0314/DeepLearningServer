@@ -12,8 +12,8 @@ namespace DeepLearningServer.Classes
                 .ForMember(dest => dest.RecipeId, opt => opt.MapFrom(src => src.RecipeId))
                 .ForMember(dest => dest.ProcessId, opt => opt.MapFrom(src => src.ProcessId))
                 .ForMember(dest => dest.ImageSize, opt => opt.MapFrom(src => src.ImageSize))
-                .ForMember(dest => dest.Categories, opt => opt.MapFrom(src => src.Categories
-                .Select(static name => new Category { Name = name }).ToList()))
+                .ForMember(dest => dest.Labels, opt => opt.MapFrom(src => src.Categories
+                .Select(static name => new Label { Name = name }).ToList()))
 
                 // 🔹 GeometryDto -> TrainingRecord 속성 매핑
                 .ForMember(dest => dest.MaxRotation, opt => opt.MapFrom(src => src.Geometry.MaxRotation))

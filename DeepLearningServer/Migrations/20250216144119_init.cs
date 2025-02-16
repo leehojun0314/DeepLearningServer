@@ -12,18 +12,50 @@ namespace DeepLearningServer.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "Adms",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Adms", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "LogRecords",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
                     Message = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Level = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Level = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_LogRecords", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Processes",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    LastSyncDate = table.Column<DateTime>(type: "datetime", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Processes", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -39,13 +71,13 @@ namespace DeepLearningServer.Migrations
                     EndTime = table.Column<DateTime>(type: "datetime2", nullable: true),
                     RecipeId = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     ProcessId = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    ModelName = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    ModelPath = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Accuracy = table.Column<double>(type: "float", nullable: false),
-                    Loss = table.Column<double>(type: "float", nullable: false),
-                    Progress = table.Column<float>(type: "real", nullable: false),
-                    BestIteration = table.Column<int>(type: "int", nullable: false),
-                    Status = table.Column<string>(type: "nvarchar(50)", nullable: false),
+                    ModelName = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ModelPath = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Accuracy = table.Column<double>(type: "float", nullable: true),
+                    Loss = table.Column<double>(type: "float", nullable: true),
+                    Progress = table.Column<float>(type: "real", nullable: true),
+                    BestIteration = table.Column<int>(type: "int", nullable: true),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     MaxRotation = table.Column<float>(type: "real", nullable: false),
                     MaxVerticalShift = table.Column<float>(type: "real", nullable: false),
                     MaxHorizontalShift = table.Column<float>(type: "real", nullable: false),
@@ -85,12 +117,67 @@ namespace DeepLearningServer.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "AdmsProcesses",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    AdmsId = table.Column<int>(type: "int", nullable: false),
+                    ProcessId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AdmsProcesses", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_AdmsProcesses_Adms_AdmsId",
+                        column: x => x.AdmsId,
+                        principalTable: "Adms",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_AdmsProcesses_Processes_ProcessId",
+                        column: x => x.ProcessId,
+                        principalTable: "Processes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "RecipeFiles",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    FileName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Content = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ProcessId = table.Column<int>(type: "int", nullable: false),
+                    AdmsId = table.Column<int>(type: "int", nullable: false),
+                    LastModified = table.Column<DateTime>(type: "datetime", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RecipeFiles", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RecipeFiles_Adms_AdmsId",
+                        column: x => x.AdmsId,
+                        principalTable: "Adms",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_RecipeFiles_Processes_ProcessId",
+                        column: x => x.ProcessId,
+                        principalTable: "Processes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Labels",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(100)", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     TrainingRecordId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
@@ -129,6 +216,16 @@ namespace DeepLearningServer.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_AdmsProcesses_AdmsId",
+                table: "AdmsProcesses",
+                column: "AdmsId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AdmsProcesses_ProcessId",
+                table: "AdmsProcesses",
+                column: "ProcessId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Labels_TrainingRecordId",
                 table: "Labels",
                 column: "TrainingRecordId");
@@ -137,11 +234,24 @@ namespace DeepLearningServer.Migrations
                 name: "IX_ProgressEntries_TrainingRecordId",
                 table: "ProgressEntries",
                 column: "TrainingRecordId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RecipeFiles_AdmsId",
+                table: "RecipeFiles",
+                column: "AdmsId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RecipeFiles_ProcessId",
+                table: "RecipeFiles",
+                column: "ProcessId");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "AdmsProcesses");
+
             migrationBuilder.DropTable(
                 name: "Labels");
 
@@ -152,7 +262,16 @@ namespace DeepLearningServer.Migrations
                 name: "ProgressEntries");
 
             migrationBuilder.DropTable(
+                name: "RecipeFiles");
+
+            migrationBuilder.DropTable(
                 name: "TrainingRecords");
+
+            migrationBuilder.DropTable(
+                name: "Adms");
+
+            migrationBuilder.DropTable(
+                name: "Processes");
         }
     }
 }

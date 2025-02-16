@@ -3,17 +3,11 @@ using System.Collections.Generic;
 
 namespace DeepLearningServer.Models;
 
-public partial class ProgressEntry
+public partial class Label
 {
     public int Id { get; set; }
 
-    public bool IsTraining { get; set; }
-
-    public double Progress { get; set; }
-
-    public double BestIteration { get; set; }
-
-    public DateTime Timestamp { get; set; }
+    public string Name { get; set; } = null!;
 
     public int TrainingRecordId { get; set; }
 

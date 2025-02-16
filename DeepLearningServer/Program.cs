@@ -1,4 +1,5 @@
 using DeepLearningServer.Classes;
+using DeepLearningServer.Models;
 using DeepLearningServer.Services;
 using DeepLearningServer.Settings;
 using Microsoft.EntityFrameworkCore;
@@ -21,11 +22,11 @@ public class Program
         var connectionString = builder.Configuration.GetSection("DatabaseSettings:ConnectionStringMS").Value;
 
         // MSSQL 데이터베이스 연결 설정
-        builder.Services.AddDbContext<AppDbContext>(options =>
+        builder.Services.AddDbContext<DlServerContext>(options =>
         {
             var dbSettings = builder.Configuration.GetSection("DatabaseSettings").Get<SqlDbSettings>();
             options.UseSqlServer(dbSettings.ConnectionStringMS,
-                sqlOptions => sqlOptions.MigrationsAssembly(typeof(AppDbContext).Assembly.GetName().Name));
+                sqlOptions => sqlOptions.MigrationsAssembly(typeof(DlServerContext).Assembly.GetName().Name));
         });
         //builder.Services.AddSingleton<MongoDbService>(sp =>
         //{

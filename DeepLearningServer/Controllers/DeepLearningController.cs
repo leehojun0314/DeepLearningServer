@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 using AutoMapper;
-using MongoDB.Bson;
 
 /// <summary>
 /// Represents a controller for handling deep learning-related API requests.
@@ -74,8 +73,18 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 {
                     _mssqlDbService.InsertLogAsync("Loading Images", LogLevel.Debug).GetAwaiter().GetResult();
                     Console.WriteLine("Loading images...");
-                    int numImages = instance.LoadImages();
+                    int numImages = 0;
+                    TimeSpan elapsedTime = MeasureExecutionTime.Measure(() =>
+                    {
+                        numImages = instance.LoadImages();
+                    });
+                    if (numImages == 0)
+                    {
+                        return;
+                    }
+                    
                     Console.WriteLine($"Loaded {numImages} images");
+                    Console.WriteLine($"Elapsed time: {elapsedTime.TotalSeconds} seconds");
                     _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
 
                     // Train 메서드도 STA 환경에서 실행됨
@@ -110,6 +119,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                     }).GetAwaiter().GetResult();
                     string savePath = $@"D:\Models\{parameterData.RecipeId}\{parameterData.ProcessId}\{DateTime.UtcNow}\";
                     instance.SaveModel(savePath + "trainingModel.edltool");
+
                     //instance.SaveSettings(savePath + "trainingsettings.settings");
                     instance.StopTraining();
                     SingletonAiDuo.Reset(parameterData.ImageSize);
