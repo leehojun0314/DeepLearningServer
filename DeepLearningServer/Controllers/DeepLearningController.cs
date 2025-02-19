@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 using AutoMapper;
+using DeepLearningServer.Dtos;
+using Euresys.Open_eVision;
 
 /// <summary>
 /// Represents a controller for handling deep learning-related API requests.
@@ -23,22 +25,38 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     private readonly MssqlDbService _mssqlDbService = mssqlDbService;
     private readonly IMapper _mapper = mapper;
 
-    private int _recordId;
 
     [HttpPost("run")]
     public async Task<IActionResult> CreateToolAndRun([FromBody] CreateAndRunModel parameterData)
     {
         try
         {
-            
-        //_mssqlDbService.InsertLogAsync("create tool and run called", LogLevel.Information);
-        await _mssqlDbService.InsertLogAsync("create tool and run called", LogLevel.Information);
-        // Validate required fields
-        if (string.IsNullOrWhiteSpace(parameterData.RecipeId))
-            return BadRequest(new NewRecord("RecipeId is required."));
 
-        if (string.IsNullOrWhiteSpace(parameterData.ProcessId))
-            return BadRequest(new NewRecord("ProcessId is required."));
+            // 🔹 상태 파일 확인
+            if (ToolStatusManager.IsProcessRunning())
+            {
+                return BadRequest("The tool is already running.");
+            }
+
+            // 🔹 실행 상태를 파일에 기록
+            ToolStatusManager.SetProcessRunning(true);
+
+            // 🔹 Check license (오래 걸릴 수 있음)
+            bool isRunning = await _mssqlDbService.CheckIsTraining();
+            if (isRunning)
+            {
+                ToolStatusManager.SetProcessRunning(false); // 실패 시 상태 해제
+                return BadRequest("The tool is already running.");
+            }
+            //Console.WriteLine("Checking license..");
+            //bool hasLicense = Easy.CheckLicense(Euresys.Open_eVision.LicenseFeatures.Features.EasyClassify);
+            //Console.WriteLine($"Has license: {hasLicense}");
+            //if (!hasLicense) throw new Exception("No license found");
+            //_mssqlDbService.InsertLogAsync("create tool and run called", LogLevel.Information);
+            await _mssqlDbService.InsertLogAsync("Create tool and run called", LogLevel.Information);
+        // Validate required fields
+        if (parameterData.AdmsProcessId == -1)
+            return BadRequest(new NewRecord("AdmsProcessId is required."));
 
         TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
         //check if instance is already exist
@@ -62,8 +80,10 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         await _mssqlDbService.InsertLogAsync("Parameters set", LogLevel.Debug);
         await _mssqlDbService.InsertLogAsync("Start model traning", LogLevel.Information);
         instance.recordId = record.Id;
-        _recordId = record.Id;
-        Console.WriteLine("Record id: " + record.Id);
+        Dictionary<string, int> dictionary = await _mssqlDbService.GetAdmsProcessInfo(parameterData.AdmsProcessId);
+        string processName = await _mssqlDbService.GetProcessNameById(dictionary["processId"]);
+        Adm adms = await _mssqlDbService.GetAdmsById(dictionary["admsId"]);
+            Console.WriteLine("Record id: " + record.Id);
         _ = Task.Run(async () =>
         {
             await RunOnStaThread(() =>
@@ -76,7 +96,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                     int numImages = 0;
                     TimeSpan elapsedTime = MeasureExecutionTime.Measure(() =>
                     {
-                        numImages = instance.LoadImages();
+                        numImages = instance.LoadImages(processName);
                     });
                     if (numImages == 0)
                     {
@@ -117,34 +137,51 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         //_mssqlDbService.PushProgressEntry(record.Id, newEntry).GetAwaiter().GetResult();
                         _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
                     }).GetAwaiter().GetResult();
-                    string savePath = $@"D:\Models\{parameterData.RecipeId}\{parameterData.ProcessId}\{DateTime.UtcNow}\";
-                    instance.SaveModel(savePath + "trainingModel.edltool");
+                    string timeStamp = DateTime.UtcNow.ToString("yyyyMMdd");
+                    string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
+                    if (!Directory.Exists(savePath))
+                    {
+                        Directory.CreateDirectory(savePath);
+                    }
+                    instance.SaveModel(savePath + "trainingModel.edltool", adms.LocalIp);
 
                     //instance.SaveSettings(savePath + "trainingsettings.settings");
-                    instance.StopTraining();
-                    SingletonAiDuo.Reset(parameterData.ImageSize);
+                   
                     _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
                     //_mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Completed } }, record.Id).GetAwaiter().GetResult();
                     _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Completed }, { "EndTime" , DateTime.UtcNow } }).GetAwaiter().GetResult();
-                    Dictionary<string, float> trainingResult = instance.GetTrainingResult();
+                    Dictionary<string, float> trainingResults = instance.GetTrainingResult();
                     //_mongoDbService.UpdateLablesById(record.Id, trainingResult).GetAwaiter().GetResult();
-                    
+                    var labelList = trainingResults.Select(kvp => new Label
+                    {
+                        Name = kvp.Key,        // 레이블 이름 (예: "okAccuracy", "weightedError" 등)
+                        Accuracy = kvp.Value,     // 해당 레이블의 값
+                        TrainingRecordId = record.Id  // 연관된 TrainingRecord의 Id
+                    }).ToArray();
+                    Console.WriteLine($"label list: {labelList.ToString()}");
+                    _mssqlDbService.UpdateLabelsByIdAsync(record.Id, labelList).GetAwaiter().GetResult();
+                    instance.StopTraining();
+                    SingletonAiDuo.Reset(parameterData.ImageSize);
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine(e);
+                    ToolStatusManager.SetProcessRunning(false);
                     _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
-                    //_mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }, _recordId).GetAwaiter().GetResult();
+                    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
+                    instance.StopTraining();
                     SingletonAiDuo.Reset(parameterData.ImageSize);
                     throw;
                 }
             });
         });
-        //_mongoDbService.InsertTraining(record).GetAwaiter();
-        await _mssqlDbService.InsertTrainingAsync(record);
+            //_mongoDbService.InsertTraining(record).GetAwaiter();
+            record.Status = TrainingStatus.Running;
+            record.StartTime = DateTime.UtcNow;
+            await _mssqlDbService.InsertTrainingAsync(record);
         Console.WriteLine("Training record inserted");
         Console.WriteLine($"Record id: {record.Id}");
-
+            ToolStatusManager.SetProcessRunning(false);
         return Ok(new
         {
             Message = "Training initialized successfully.",
@@ -153,6 +190,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         }
             catch(Exception error)
         {
+            ToolStatusManager.SetProcessRunning(false);
             Console.WriteLine(error.Message);
             _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);
             throw;
@@ -175,6 +213,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
             instance.StopTraining();
             SingletonAiDuo.Reset(imageSize);
+            ToolStatusManager.SetProcessRunning(false);
             await _mssqlDbService.InsertLogAsync("Training stopped", LogLevel.Debug);
             return Ok("Processing completed successfully.");
         }
@@ -236,22 +275,22 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     //    //instance.Classify(imagePaths);
     //    Ok("OK");
 
-    [HttpGet("save/{imageSize}")]
-    public IActionResult SaveModel([FromRoute] ImageSize imageSize, [FromQuery] string modelFilePath, [FromQuery] string settingsFilePath)
-    {
-        try
-        {
-            var instance = SingletonAiDuo.GetInstance(imageSize);
-            instance.SaveModel(modelFilePath);
-            //instance.SaveSettings(settingsFilePath);
-            return Ok("OK");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            return BadRequest(e.Message);
-        }
-    }
+    //[HttpGet("save/{imageSize}")]
+    //public async Task<IActionResult> SaveModel([FromRoute] ImageSize imageSize, [FromQuery] string modelFilePath, [FromQuery] string settingsFilePath)
+    //{
+    //    try
+    //    {
+    //        var instance = SingletonAiDuo.GetInstance(imageSize);
+    //        await instance.SaveModel(modelFilePath, );
+    //        //instance.SaveSettings(settingsFilePath);
+    //        return Ok("OK");
+    //    }
+    //    catch (Exception e)
+    //    {
+    //        Console.WriteLine(e);
+    //        return BadRequest(e.Message);
+    //    }
+    //}
 
     [HttpGet("load/{imageSize}")]
     public IActionResult LoadModel([FromRoute] ImageSize imageSize, [FromQuery] string modelFilePath, [FromQuery] string settingsFilePath)

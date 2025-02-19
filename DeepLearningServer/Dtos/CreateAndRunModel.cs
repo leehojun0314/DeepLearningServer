@@ -2,29 +2,28 @@ using System.ComponentModel;
 using DeepLearningServer.Enums;
 using Euresys.Open_eVision.EasyDeepLearning;
 
-namespace DeepLearningServer.Models;
+namespace DeepLearningServer.Dtos;
 
 public class CreateAndRunModel
 {
-    public required string RecipeId { get; set; }
-    public required string ProcessId { get; set; }
+    //public required string RecipeId { get; set; }
+    //public required string ProcessId { get; set; }
+    public required int AdmsProcessId { get; set; } = -1;
     public required ImageSize ImageSize { get; set; }
     public string[] Categories { get; set; }
 
-    [DefaultValue(0.7f)]
-    public float TrainingProportion { get; set; } = 0.7f;
+    //[DefaultValue(0.7f)]
+    //public float TrainingProportion { get; set; } = 0.7f;
 
-    [DefaultValue(0.2f)]
-    public float ValidationProportion { get; set; } = 0.2f;
+    //[DefaultValue(0.2f)]
+    //public float ValidationProportion { get; set; } = 0.2f;
 
-    [DefaultValue(0.1f)]
-    public float TestProportion { get; set; } = 0.1f;
+    //[DefaultValue(0.1f)]
+    //public float TestProportion { get; set; } = 0.1f;
 
     [DefaultValue(50)]
     public int Iterations { get; set; } = 50;
 
-    [DefaultValue("D:/trainingModel.edlmodel")]
-    public string TrainingModelClientPath { get; set; } = "D:/trainingModel.edlmodel";
     // 이하부터는 기존에 하나씩 있던 파라미터들을 하위 객체로 정리
     public GeometryParamsDto Geometry { get; set; } = new();
     public ColorParamsDto Color { get; set; } = new();

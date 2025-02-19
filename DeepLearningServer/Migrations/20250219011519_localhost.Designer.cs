@@ -4,6 +4,7 @@ using DeepLearningServer.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeepLearningServer.Migrations
 {
     [DbContext(typeof(DlServerContext))]
-    partial class DlServerContextModelSnapshot : ModelSnapshot
+    [Migration("20250219011519_localhost")]
+    partial class localhost
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -77,25 +80,7 @@ namespace DeepLearningServer.Migrations
                     b.Property<int>("AdmsId")
                         .HasColumnType("int");
 
-                    b.Property<bool>("IsCategorized")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsTrainned")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("L")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("LastSyncDate")
-                        .HasColumnType("datetime");
-
-                    b.Property<int>("M")
-                        .HasColumnType("int");
-
                     b.Property<int>("ProcessId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("S")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
@@ -161,9 +146,6 @@ namespace DeepLearningServer.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<float?>("Accuracy")
-                        .HasColumnType("real");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -214,6 +196,9 @@ namespace DeepLearningServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime");
+
+                    b.Property<DateTime?>("LastSyncDate")
                         .HasColumnType("datetime");
 
                     b.Property<string>("Name")

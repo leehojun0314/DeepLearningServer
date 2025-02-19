@@ -12,15 +12,11 @@ public partial class TrainingRecord
 
     public DateTime CreatedTime { get; set; }
 
-    public Guid SettingId { get; set; }
-
     public DateTime StartTime { get; set; }
 
     public DateTime? EndTime { get; set; }
 
-    public string RecipeId { get; set; } = null!;
-
-    public string ProcessId { get; set; } = null!;
+    public int AdmsProcessId { get; set; }
 
     public string? ModelName { get; set; } = null!;
 
@@ -34,7 +30,7 @@ public partial class TrainingRecord
 
     public int? BestIteration { get; set; }
 
-    public TrainingStatus? Status { get; set; }
+    public TrainingStatus? Status { get; set; } = null!;
 
     public float MaxRotation { get; set; }
 
@@ -99,6 +95,8 @@ public partial class TrainingRecord
     public bool EnableHistogramEqualization { get; set; }
 
     public int BatchSize { get; set; }
+
+    public virtual AdmsProcess AdmsProcess { get; set; } = null!;
 
     public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 

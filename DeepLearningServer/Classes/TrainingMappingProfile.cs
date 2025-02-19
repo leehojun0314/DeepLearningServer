@@ -1,4 +1,5 @@
 ﻿using AutoMapper;
+using DeepLearningServer.Dtos;
 using DeepLearningServer.Models;
 
 namespace DeepLearningServer.Classes
@@ -9,8 +10,7 @@ namespace DeepLearningServer.Classes
         {
             // 최상위: CreateAndRunModel → TrainingRecord
             CreateMap<CreateAndRunModel, TrainingRecord>()
-                .ForMember(dest => dest.RecipeId, opt => opt.MapFrom(src => src.RecipeId))
-                .ForMember(dest => dest.ProcessId, opt => opt.MapFrom(src => src.ProcessId))
+                .ForMember(dest => dest.AdmsProcessId, opt => opt.MapFrom(src => src.AdmsProcessId))
                 .ForMember(dest => dest.ImageSize, opt => opt.MapFrom(src => src.ImageSize))
                 .ForMember(dest => dest.Labels, opt => opt.MapFrom(src => src.Categories
                 .Select(static name => new Label { Name = name }).ToList()))

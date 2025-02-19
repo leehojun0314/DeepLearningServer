@@ -2,6 +2,7 @@ using DeepLearningServer.Classes;
 using DeepLearningServer.Models;
 using DeepLearningServer.Services;
 using DeepLearningServer.Settings;
+using Euresys.Open_eVision;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -10,6 +11,11 @@ public class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        //Console.WriteLine("Checking license..");
+        //bool hasLicense = Easy.CheckLicense(Euresys.Open_eVision.LicenseFeatures.Features.EasyClassify);
+        //Console.WriteLine($"Has license: {hasLicense}");
+        //if (!hasLicense) throw new Exception("No license found");
+
         var builder = WebApplication.CreateBuilder(args);
 
         // 환경 변수 추가 등 설정
@@ -17,8 +23,9 @@ public class Program
         builder.Services.Configure<ServerSettings>(builder.Configuration.GetSection("ServerSettings"));
         //builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("DatabaseSettings"));
         builder.Services.Configure<SqlDbSettings>(
-    builder.Configuration.GetSection("DatabaseSettings")
-);
+            builder.Configuration.GetSection("DatabaseSettings")
+        );
+        
         var connectionString = builder.Configuration.GetSection("DatabaseSettings:ConnectionStringMS").Value;
 
         // MSSQL 데이터베이스 연결 설정
@@ -50,11 +57,15 @@ public class Program
         });
         builder.WebHost.ConfigureKestrel(options =>
         {
-            options.ListenAnyIP(8080);
+            options.ListenAnyIP(8081);
         });
 
         var app = builder.Build();
-
+        using (var scope = builder.Services.BuildServiceProvider().CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<DlServerContext>();
+            dbContext.Database.Migrate(); // 자동 마이그레이션 수행
+        }
         //app.MapOpenApi();
         app.MapGet("/", () =>
             "Greetings from deep learning server " + DateTime.Now.ToLongTimeString());

@@ -1,11 +1,11 @@
-﻿using DeepLearningServer.Enums;
-using DeepLearningServer.Models;
+﻿using DeepLearningServer.Dtos;
+using DeepLearningServer.Enums;
 using DeepLearningServer.Settings;
 using Euresys.Open_eVision;
 using Euresys.Open_eVision.EasyDeepLearning;
 using Euresys.Open_eVision.LicenseFeatures;
-using MongoDB.Bson;
 using NuGet.Protocol;
+using System.Net.Http.Headers;
 
 namespace DeepLearningServer.Classes;
 
@@ -22,34 +22,32 @@ public class TrainingAi
     private EClassificationDataset? dataset;
     private readonly CreateAndRunModel? parameterData;
 
-    private readonly string? processId;
+    //private readonly string? processId;
     public int recordId;
-    private EClassificationDataset? testDataset;
-    private EClassificationDataset? trainingDataset;
-    private EClassificationDataset? tvDataset;
-    private EClassificationDataset? validationDataset;
+    //private EClassificationDataset? testDataset;
+    //private EClassificationDataset? trainingDataset;
+    //private EClassificationDataset? tvDataset;
+    //private EClassificationDataset? validationDataset;
     private readonly string[]? categories;
 
     #region Initialize
     public TrainingAi(CreateAndRunModel parameterData, ServerSettings serverSettings)
     {
 
-        Console.WriteLine("Checking license..");
-        bool hasLicense = Easy.CheckLicense(Features.EasyClassify);
-        Console.WriteLine($"Has license: {hasLicense}");
-        if (!hasLicense) throw new Exception("No license found");
+       
 
         this.serverSettings = serverSettings;
         this.parameterData = parameterData;
         classifier = new EClassifier();
         dataset = new EClassificationDataset();
-        tvDataset = new EClassificationDataset();
-        trainingDataset = new EClassificationDataset();
-        validationDataset = new EClassificationDataset();
-        testDataset = new EClassificationDataset();
+        //tvDataset = new EClassificationDataset();
+        //trainingDataset = new EClassificationDataset();
+        //validationDataset = new EClassificationDataset();
+        //testDataset = new EClassificationDataset();
         classifier.EnableGPU = true;
         categories = parameterData.Categories;
-        processId = parameterData.ProcessId;
+
+        //processId = parameterData.ProcessId;
         Console.WriteLine($"Number of GPUs: {classifier.NumGPUs}");
     }
 
@@ -57,7 +55,7 @@ public class TrainingAi
 
     #region Load images
 
-    public int LoadImages()
+    public int LoadImages(string processId)
     {
         if (parameterData == null) throw new Exception("Parameter data is null");
         var imagePath = parameterData.ImageSize switch
@@ -85,11 +83,11 @@ public class TrainingAi
         dataset.AddImages(imagePath + $@"\OK\{processId}\BASE\*.jpg", "OK");
         //Load new OK images (processed images)
         dataset.AddImages(imagePath + $@"\OK\{processId}\NEW\*.jpg", "OK");
-        var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
-        dataset.SplitDataset(tvDataset, testDataset, firstProportion);
-        var secondProportion = parameterData.TrainingProportion /
-                                 (parameterData.TrainingProportion + parameterData.ValidationProportion);
-        tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
+        //var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
+        //dataset.SplitDataset(tvDataset, testDataset, firstProportion);
+        //var secondProportion = parameterData.TrainingProportion /
+                                 //(parameterData.TrainingProportion + parameterData.ValidationProportion);
+        //tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
         Console.WriteLine("Num labels: " + dataset.NumLabels);
         Console.WriteLine($"num images: {dataset.NumImages}");
         if (dataset.NumImages < 1)
@@ -164,7 +162,7 @@ public class TrainingAi
         var activeDevice = classifier.GetActiveDevice();
        
         Console.WriteLine($"active device name: {activeDevice.Name} /n type: {activeDevice.DeviceType}");
-        classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
+        classifier.Train(dataset, dataAug, parameterData?.Iterations ?? 3);
         while (true)
         {
             classifier.WaitForIterationCompletion();
@@ -245,8 +243,8 @@ public class TrainingAi
         if (classifier == null) throw new Exception("The classifier is null");
         Dictionary<string, float> dictionary = new();
         var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
-        var weightedAccuracy = metrics.GetWeightedAccuracy(validationDataset);
-        var weightedError = metrics.GetWeightedError(validationDataset);
+        var weightedAccuracy = metrics.GetWeightedAccuracy(dataset);
+        var weightedError = metrics.GetWeightedError(dataset);
         Console.WriteLine($"weighted accuracy: {weightedAccuracy}");
         Console.WriteLine($"weighted error: {weightedError}");
         metrics.GetLabelAccuracy("BURST");
@@ -257,9 +255,9 @@ public class TrainingAi
         Console.WriteLine($"Metrics json: {metricsJson}");
 
         Console.WriteLine("labeled accuracies finished");
-        dictionary.Add("weightedAccuracy", metrics.GetWeightedAccuracy(validationDataset));
+        dictionary.Add("weightedAccuracy", metrics.GetWeightedAccuracy(dataset));
         Console.WriteLine("flag 1");
-        dictionary.Add("weightedError", metrics.GetWeightedError(validationDataset));
+        dictionary.Add("weightedError", metrics.GetWeightedError(dataset));
         Console.WriteLine("flag 2");
 
         dictionary.Add("okAccuracy", metrics.GetLabelAccuracy("OK"));
@@ -284,25 +282,76 @@ public class TrainingAi
     {
         classifier?.Dispose();
         dataset?.Dispose();
-        tvDataset?.Dispose();
-        trainingDataset?.Dispose();
-        validationDataset?.Dispose();
-        testDataset?.Dispose();
+        //tvDataset?.Dispose();
+        //trainingDataset?.Dispose();
+        //validationDataset?.Dispose();
+        //testDataset?.Dispose();
         dataAug?.Dispose();
 
         classifier = null;
         dataset = null;
-        tvDataset = null;
-        trainingDataset = null;
-        validationDataset = null;
-        validationDataset = null;
-        testDataset = null;
+        //tvDataset = null;
+        //trainingDataset = null;
+        //validationDataset = null;
+        //validationDataset = null;
+        //testDataset = null;
         dataAug = null;
     }
 
-    public void SaveModel(string filePath)
+    public async Task SaveModel(string filePath, string clientIpAddress)
     {
-        classifier?.SaveTrainingModel(filePath);
+        try
+        {
+            // 디렉토리 경로 추출
+            string? directoryPath = Path.GetDirectoryName(filePath);
+
+            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+            {
+                // 디렉토리 생성
+                Directory.CreateDirectory(directoryPath);
+
+            }
+
+            // 모델 저장
+            classifier?.SaveTrainingModel(filePath);
+            Console.WriteLine("file path: " + filePath);
+            using (var client = new HttpClient())
+            {
+                using (var form = new MultipartFormDataContent())
+                {
+                    byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
+                    var fileContent = new ByteArrayContent(fileBytes);
+                    fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+
+                    // 🔹 파일 추가
+                    form.Add(fileContent, "File", Path.GetFileName(filePath));
+
+                    // 🔹 ModelPath 추가
+                    form.Add(new StringContent("D:/"+ Path.GetFileName(filePath)), "ModelPath");
+                    Console.WriteLine($"form.ToString(): {form.ToString()}");
+                    Console.WriteLine("client ip address: " + clientIpAddress);
+                    // 🔹 API 엔드포인트
+                    string apiUrl = $"http://{clientIpAddress}/api/model/upload";
+
+                    // 🔹 요청 전송
+                    HttpResponseMessage response = await client.PostAsync(apiUrl, form);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine("모델 업로드 성공: " + response.Content.ReadAsStringAsync().Result);
+                    }
+                    else
+                    {
+                        Console.WriteLine("모델 업로드 실패: " + response.StatusCode);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"모델 저장 중 오류 발생: {ex.Message} {ex.ToString()}");
+            throw new Exception($"모델 저장 중 오류 발생: {ex.ToString()}");
+        }
     }
 
     //public void SaveSettings(string filePath)

@@ -1,4 +1,5 @@
-﻿namespace DeepLearningServer.Models;
+﻿
+namespace DeepLearningServer.Models;
 
 public partial class LogRecord
 {
@@ -6,7 +7,7 @@ public partial class LogRecord
 
     public string Message { get; set; } = null!;
 
-    public LogLevel Level { get; set; } = LogLevel.None;
+    public LogLevel Level { get; set; } = LogLevel.Debug!;
 
     public DateTime CreatedAt { get; set; }
 }

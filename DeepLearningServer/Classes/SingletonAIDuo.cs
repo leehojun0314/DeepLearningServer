@@ -1,6 +1,7 @@
-﻿using DeepLearningServer.Enums;
-using DeepLearningServer.Models;
+﻿using DeepLearningServer.Dtos;
+using DeepLearningServer.Enums;
 using DeepLearningServer.Settings;
+using Euresys.Open_eVision;
 
 namespace DeepLearningServer.Classes;
 
@@ -11,6 +12,7 @@ public class SingletonAiDuo
 
     private SingletonAiDuo()
     {
+       
     }
 
     public static TrainingAi Instance(CreateAndRunModel parameterData, ServerSettings serverSettings)

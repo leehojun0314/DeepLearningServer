@@ -9,6 +9,8 @@ public partial class Label
 
     public string Name { get; set; } = null!;
 
+    public float? Accuracy { get; set; }
+
     public int TrainingRecordId { get; set; }
 
     public virtual TrainingRecord TrainingRecord { get; set; } = null!;

@@ -35,7 +35,34 @@ namespace DeepLearningServer.Services
             context.LogRecords.Add(logRecord);
             await context.SaveChangesAsync();
         }
-
+        public async Task<string> GetProcessNameById(int processId)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            var process = await context.Processes.FindAsync(processId);
+            if (process == null)
+                throw new NullReferenceException("Process not found");
+            return process.Name;
+        }
+        public async Task<Adm> GetAdmsById(int admsId)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            Adm adms = await context.Adms.FindAsync(admsId);
+            if (adms == null)
+                throw new NullReferenceException("Adms not found");
+            return adms;
+        }
+        public async Task<Dictionary<string, int>> GetAdmsProcessInfo(int admsProcessId)
+        {
+            Console.WriteLine("Adms process id: " + admsProcessId);
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            var admsProcess = await context.AdmsProcesses.FindAsync(admsProcessId);
+            if (admsProcess == null)
+                throw new NullReferenceException("AdmsProcess not found");
+            Dictionary<string, int> dictionary = new Dictionary<string, int>();
+            dictionary.Add("admsId", admsProcess.AdmsId);
+            dictionary.Add("processId", admsProcess.ProcessId);
+            return dictionary;
+        }
         public async Task InsertTrainingAsync(TrainingRecord trainingRecord)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
@@ -61,7 +88,20 @@ namespace DeepLearningServer.Services
 
             await context.SaveChangesAsync();
         }
-
+        public async Task<bool> CheckIsTraining()
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            var trainingRecords = await context.TrainingRecords.ToListAsync();
+            foreach (var trainingRecord in trainingRecords)
+            {
+                if (trainingRecord.Status == Enums.TrainingStatus.Running)
+                {
+                    //throw new InvalidOperationException("Another training is in progress");
+                    return true;
+                }
+            };
+            return false;
+        }
         public async Task PushProgressEntryAsync(int recordId, ProgressEntry newEntry)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
@@ -80,7 +120,7 @@ namespace DeepLearningServer.Services
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
             var trainingRecord = await context.TrainingRecords
-                .Include(tr => tr.Labels)  // 수정: 기존 Labels 포함해서 가져오기
+                .Include(tr => tr.Labels)  // 기존 레이블 포함해서 가져오기
                 .FirstOrDefaultAsync(tr => tr.Id == id);
 
             if (trainingRecord == null)
@@ -98,5 +138,6 @@ namespace DeepLearningServer.Services
 
             await context.SaveChangesAsync();
         }
+
     }
 }

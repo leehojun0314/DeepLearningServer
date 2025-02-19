@@ -1,25 +1,29 @@
 ﻿using System;
 using System.Collections.Generic;
 using DeepLearningServer.Enums;
+using DeepLearningServer.Settings;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace DeepLearningServer.Models;
 
 public partial class DlServerContext : DbContext
 {
+    private readonly SqlDbSettings _dbSettings;
 
-    private readonly IConfiguration _configuration;
+    public DlServerContext()
+    {
+    }
 
     public DlServerContext(DbContextOptions<DlServerContext> options, IConfiguration configuration)
         : base(options)
     {
-        _configuration = configuration;
     }
 
-    public virtual DbSet<Adms> Adms { get; set; }
+    public virtual DbSet<Adm> Adms { get; set; }
 
     public virtual DbSet<AdmsProcess> AdmsProcesses { get; set; }
+
+    public virtual DbSet<ImageFile> ImageFiles { get; set; }
 
     public virtual DbSet<Label> Labels { get; set; }
 
@@ -33,23 +37,14 @@ public partial class DlServerContext : DbContext
 
     public virtual DbSet<TrainingRecord> TrainingRecords { get; set; }
 
-    //    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    //#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-    //        => optionsBuilder.UseSqlServer("Server = www.dtizen.com, 1433; Uid = dtizen; Pwd = #lee353535; database = DL_SERVER; TrustServerCertificate=True;");
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        if (!optionsBuilder.IsConfigured)
-        {
-            var connectionString = _configuration.GetSection("DatabaseSettings:ConnectionStringMS").Value;
-            optionsBuilder.UseSqlServer(connectionString,
-                sqlOptions => sqlOptions.MigrationsAssembly(typeof(DlServerContext).Assembly.GetName().Name));
-        }
-    }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Adms>(entity =>
+        modelBuilder.Entity<Adm>(entity =>
         {
+            entity.Property(e => e.CpuId).HasMaxLength(100);
             entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+            entity.Property(e => e.LocalIp).HasMaxLength(100);
+            entity.Property(e => e.MacAddress).HasMaxLength(100);
             entity.Property(e => e.Name).HasMaxLength(100);
             entity.Property(e => e.Status).HasMaxLength(50);
             entity.Property(e => e.UpdatedAt).HasColumnType("datetime");
@@ -64,6 +59,30 @@ public partial class DlServerContext : DbContext
             entity.HasOne(d => d.Adms).WithMany(p => p.AdmsProcesses).HasForeignKey(d => d.AdmsId);
 
             entity.HasOne(d => d.Process).WithMany(p => p.AdmsProcesses).HasForeignKey(d => d.ProcessId);
+            entity.Property(d => d.LastSyncDate).HasColumnType("datetime");
+            entity.Property(d => d.IsTrainned).HasColumnType("bit");
+            entity.Property(d=>d.IsCategorized).HasColumnType("bit");
+            entity.Property(d=>d.L).HasColumnType("int");
+            entity.Property(d => d.M).HasColumnType("int");
+            entity.Property(d => d.S).HasColumnType("int");
+
+        });
+
+        modelBuilder.Entity<ImageFile>(entity =>
+        {
+            entity.HasIndex(e => e.AdmsId, "IX_ImageFiles_AdmsId");
+
+            entity.HasIndex(e => e.ProcessId, "IX_ImageFiles_ProcessId");
+
+            entity.Property(e => e.CapturedTime).HasColumnType("datetime");
+            entity.Property(e => e.Directory).HasMaxLength(255);
+            entity.Property(e => e.Name).HasMaxLength(255);
+            entity.Property(e => e.Size).HasMaxLength(10);
+            entity.Property(e => e.Status).HasMaxLength(50);
+
+            entity.HasOne(d => d.Adms).WithMany(p => p.ImageFiles).HasForeignKey(d => d.AdmsId);
+
+            entity.HasOne(d => d.Process).WithMany(p => p.ImageFiles).HasForeignKey(d => d.ProcessId);
         });
 
         modelBuilder.Entity<Label>(entity =>
@@ -71,14 +90,13 @@ public partial class DlServerContext : DbContext
             entity.HasIndex(e => e.TrainingRecordId, "IX_Labels_TrainingRecordId");
 
             entity.Property(e => e.Name).HasMaxLength(100);
-
+            entity.Property(e => e.Accuracy).IsRequired(false);
             entity.HasOne(d => d.TrainingRecord).WithMany(p => p.Labels).HasForeignKey(d => d.TrainingRecordId);
         });
 
         modelBuilder.Entity<Process>(entity =>
         {
             entity.Property(e => e.CreatedAt).HasColumnType("datetime");
-            entity.Property(e => e.LastSyncDate).HasColumnType("datetime");
             entity.Property(e => e.Name).HasMaxLength(100);
             entity.Property(e => e.UpdatedAt).HasColumnType("datetime");
         });
@@ -106,14 +124,18 @@ public partial class DlServerContext : DbContext
 
         modelBuilder.Entity<TrainingRecord>(entity =>
         {
-            entity.Property(e => e.SettingId).HasColumnName("SettingID");
-            entity.Property(e => e.Status).HasMaxLength(50).HasConversion(new ValueConverter<TrainingStatus, string>(v => v.ToString(), v => (TrainingStatus)Enum.Parse(typeof(TrainingStatus), v)));
-            
+            entity.HasIndex(e => e.AdmsProcessId, "IX_TrainingRecords_AdmsProcessId");
+
+            entity.Property(e => e.Status).HasMaxLength(50);
+
+            entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingRecords).HasForeignKey(d => d.AdmsProcessId);
+            entity.Property(e => e.Status).HasConversion<string>(v => v.ToString(), v => Enum.Parse<TrainingStatus>(v));
         });
         modelBuilder.Entity<LogRecord>(entity =>
         {
-            var loglevelConverter = new ValueConverter<LogLevel, string>(v => v.ToString(), v => (LogLevel)Enum.Parse(typeof(LogLevel), v));
-            entity.Property(e=>e.Level).HasConversion(loglevelConverter);
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+            entity.Property(e => e.Message).HasMaxLength(255);
+            entity.Property(e => e.Level).HasMaxLength(50).HasConversion<string>(v=> v.ToString(), v=> Enum.Parse<LogLevel>(v));
         });
         OnModelCreatingPartial(modelBuilder);
     }
