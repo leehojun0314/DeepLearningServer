@@ -15,13 +15,14 @@ public partial class ImageFile
 
     public string Status { get; set; } = null!;
 
-    public int ProcessId { get; set; }
+    //public int ProcessId { get; set; }
 
-    public int AdmsId { get; set; }
-
+    //public int AdmsId { get; set; }
+    public int AdmsProcessId { get; set; }
     public DateTime CapturedTime { get; set; }
 
-    public virtual Adm Adms { get; set; } = null!;
+    //public virtual Adm Adms { get; set; } = null!;
 
-    public virtual Process Process { get; set; } = null!;
+    //public virtual Process Process { get; set; } = null!;
+    public virtual AdmsProcess AdmsProcess { get; set; } = null!;
 }

@@ -7,7 +7,7 @@ public partial class Adm
 {
     public int Id { get; set; }
 
-    public string Name { get; set; } = null!;
+    public string? Name { get; set; } = null!;
 
     public string LocalIp { get; set; } = null!;
 
@@ -23,7 +23,4 @@ public partial class Adm
 
     public virtual ICollection<AdmsProcess> AdmsProcesses { get; set; } = new List<AdmsProcess>();
 
-    public virtual ICollection<ImageFile> ImageFiles { get; set; } = new List<ImageFile>();
-
-    public virtual ICollection<RecipeFile> RecipeFiles { get; set; } = new List<RecipeFile>();
 }

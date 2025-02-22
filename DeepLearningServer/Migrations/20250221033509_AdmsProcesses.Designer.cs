@@ -4,6 +4,7 @@ using DeepLearningServer.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeepLearningServer.Migrations
 {
     [DbContext(typeof(DlServerContext))]
-    partial class DlServerContextModelSnapshot : ModelSnapshot
+    [Migration("20250221033509_AdmsProcesses")]
+    partial class AdmsProcesses
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -76,6 +79,15 @@ namespace DeepLearningServer.Migrations
                     b.Property<int>("AdmsId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsCategorized")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsTrainned")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastSyncDate")
+                        .HasColumnType("datetime");
+
                     b.Property<int>("ProcessId")
                         .HasColumnType("int");
 
@@ -86,38 +98,6 @@ namespace DeepLearningServer.Migrations
                     b.HasIndex(new[] { "ProcessId" }, "IX_AdmsProcesses_ProcessId");
 
                     b.ToTable("AdmsProcesses");
-                });
-
-            modelBuilder.Entity("DeepLearningServer.Models.AdmsProcessType", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AdmsProcessId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsCategorized")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsTrainned")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("LastSyncDate")
-                        .HasColumnType("datetime");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_AdmsProcessTypes_AdmsProcessId");
-
-                    b.ToTable("AdmsProcessType");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
@@ -464,17 +444,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("Process");
                 });
 
-            modelBuilder.Entity("DeepLearningServer.Models.AdmsProcessType", b =>
-                {
-                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
-                        .WithMany("AdmsProcessTypes")
-                        .HasForeignKey("AdmsProcessId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AdmsProcess");
-                });
-
             modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
                 {
                     b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
@@ -537,8 +506,6 @@ namespace DeepLearningServer.Migrations
 
             modelBuilder.Entity("DeepLearningServer.Models.AdmsProcess", b =>
                 {
-                    b.Navigation("AdmsProcessTypes");
-
                     b.Navigation("ImageFiles");
 
                     b.Navigation("RecipeFiles");

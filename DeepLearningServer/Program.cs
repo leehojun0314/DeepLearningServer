@@ -23,16 +23,16 @@ public class Program
         builder.Services.Configure<ServerSettings>(builder.Configuration.GetSection("ServerSettings"));
         //builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("DatabaseSettings"));
         builder.Services.Configure<SqlDbSettings>(
-            builder.Configuration.GetSection("DatabaseSettings")
+            builder.Configuration.GetSection("ConnectionStrings")
         );
         
-        var connectionString = builder.Configuration.GetSection("DatabaseSettings:ConnectionStringMS").Value;
+        var connectionString = builder.Configuration.GetSection("ConnectionStrings:DefaultConnection").Value;
 
         // MSSQL 데이터베이스 연결 설정
         builder.Services.AddDbContext<DlServerContext>(options =>
         {
-            var dbSettings = builder.Configuration.GetSection("DatabaseSettings").Get<SqlDbSettings>();
-            options.UseSqlServer(dbSettings.ConnectionStringMS,
+            var dbSettings = builder.Configuration.GetSection("ConnectionStrings").Get<SqlDbSettings>();
+            options.UseSqlServer(connectionString,
                 sqlOptions => sqlOptions.MigrationsAssembly(typeof(DlServerContext).Assembly.GetName().Name));
         });
         //builder.Services.AddSingleton<MongoDbService>(sp =>

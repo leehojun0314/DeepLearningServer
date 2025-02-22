@@ -59,6 +59,7 @@ public class SingletonAiDuo
 
     public static void Reset(ImageSize imageSize)
     {
+        
         if (imageSize == ImageSize.Large) _instanceLarge = null;
         if (imageSize == ImageSize.Medium) _instanceMedium = null;
     }

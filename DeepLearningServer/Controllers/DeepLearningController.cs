@@ -24,7 +24,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     private readonly ServerSettings _serverSettings = serverSettings.Value;
     private readonly MssqlDbService _mssqlDbService = mssqlDbService;
     private readonly IMapper _mapper = mapper;
-
+    private int _recordId;
 
     [HttpPost("run")]
     public async Task<IActionResult> CreateToolAndRun([FromBody] CreateAndRunModel parameterData)
@@ -59,6 +59,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             return BadRequest(new NewRecord("AdmsProcessId is required."));
 
         TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
+        record.CreatedTime = DateTime.Now;
         //check if instance is already exist
         if (SingletonAiDuo.GetInstance(parameterData.ImageSize) != null)
         {
@@ -128,7 +129,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             IsTraining = isTraining,
                             Progress = isTraining ? progress : 1,
                             BestIteration = bestIteration,
-                            Timestamp = DateTime.UtcNow
+                            Timestamp = DateTime.Now
                         };
 
                         //_mongoDbService.PartialUpdateTraining(updates, record.Id).GetAwaiter().GetResult();
@@ -137,7 +138,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         //_mssqlDbService.PushProgressEntry(record.Id, newEntry).GetAwaiter().GetResult();
                         _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
                     }).GetAwaiter().GetResult();
-                    string timeStamp = DateTime.UtcNow.ToString("yyyyMMdd");
+                    string timeStamp = DateTime.Now.ToString("yyyyMMdd");
                     string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
                     if (!Directory.Exists(savePath))
                     {
@@ -149,7 +150,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                    
                     _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
                     //_mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Completed } }, record.Id).GetAwaiter().GetResult();
-                    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Completed }, { "EndTime" , DateTime.UtcNow } }).GetAwaiter().GetResult();
+                    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Completed }, { "EndTime" , DateTime.Now } }).GetAwaiter().GetResult();
                     Dictionary<string, float> trainingResults = instance.GetTrainingResult();
                     //_mongoDbService.UpdateLablesById(record.Id, trainingResult).GetAwaiter().GetResult();
                     var labelList = trainingResults.Select(kvp => new Label
@@ -177,8 +178,9 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         });
             //_mongoDbService.InsertTraining(record).GetAwaiter();
             record.Status = TrainingStatus.Running;
-            record.StartTime = DateTime.UtcNow;
+            record.StartTime = DateTime.Now;
             await _mssqlDbService.InsertTrainingAsync(record);
+            _recordId = record.Id;
         Console.WriteLine("Training record inserted");
         Console.WriteLine($"Record id: {record.Id}");
             ToolStatusManager.SetProcessRunning(false);
@@ -190,9 +192,14 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         }
             catch(Exception error)
         {
+            _mssqlDbService.PartialUpdateTrainingAsync(_recordId, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
             ToolStatusManager.SetProcessRunning(false);
+            var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
+            instance.StopTraining();
+            SingletonAiDuo.Reset(parameterData.ImageSize);
             Console.WriteLine(error.Message);
             _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);
+
             throw;
         }
     }

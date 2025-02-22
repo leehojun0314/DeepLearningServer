@@ -1,6 +1,7 @@
 ﻿using DeepLearningServer.Models;
 using DeepLearningServer.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace DeepLearningServer.Services
@@ -19,7 +20,7 @@ namespace DeepLearningServer.Services
         private DbContextOptions<DlServerContext> GetDbContextOptions()
         {
             var optionsBuilder = new DbContextOptionsBuilder<DlServerContext>();
-            optionsBuilder.UseSqlServer(_dbSettings.ConnectionStringMS);
+            optionsBuilder.UseSqlServer(_dbSettings.DefaultConnection);
             return optionsBuilder.Options;
         }
 
@@ -30,7 +31,7 @@ namespace DeepLearningServer.Services
             {
                 Message = message,
                 Level = logLevel,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             };
             context.LogRecords.Add(logRecord);
             await context.SaveChangesAsync();
@@ -102,6 +103,29 @@ namespace DeepLearningServer.Services
             };
             return false;
         }
+        //public async Task<AdmsProcessType> GetOrCreateAdmsProcessType(int admsProcessId, string type)
+        //{
+           
+        //        using var context = new DlServerContext(GetDbContextOptions(), _configuration); var admsProcessType = await _context.AdmsProcessTypes
+        //            .FirstOrDefaultAsync(p => p.AdmsProcessId == admsProcessId && p.Type == type);
+
+        //        if (admsProcessType == null)
+        //        {
+        //            admsProcessType = new AdmsProcessType
+        //            {
+        //                AdmsProcessId = admsProcessId,
+        //                Type = type,
+        //                IsCategorized = false, // 기본값
+        //                IsTrainned = (type == "Small") ? false : false, // Small은 False, 나머지는 초기 False
+        //                LastSyncDate = DateTime.UtcNow
+        //            };
+
+        //            context.AdmsP.Add(admsProcessType);
+        //            await context.SaveChangesAsync();
+        //            _logger.LogInformation("새로운 AdmsProcessType 생성: {Type}, AdmsProcessId: {AdmsProcessId}", type, admsProcessId);
+        //        }
+        //        return admsProcessType;
+        //}
         public async Task PushProgressEntryAsync(int recordId, ProgressEntry newEntry)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);

@@ -16,7 +16,4 @@ public partial class Process
 
     public virtual ICollection<AdmsProcess> AdmsProcesses { get; set; } = new List<AdmsProcess>();
 
-    public virtual ICollection<ImageFile> ImageFiles { get; set; } = new List<ImageFile>();
-
-    public virtual ICollection<RecipeFile> RecipeFiles { get; set; } = new List<RecipeFile>();
 }
