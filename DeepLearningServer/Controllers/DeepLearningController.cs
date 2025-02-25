@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 using AutoMapper;
 using DeepLearningServer.Dtos;
-using Euresys.Open_eVision;
+using Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Represents a controller for handling deep learning-related API requests.
@@ -31,176 +31,197 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     {
         try
         {
-
-            // 🔹 상태 파일 확인
+            // 🔹 실행 중인지 확인
             if (ToolStatusManager.IsProcessRunning())
             {
                 return BadRequest("The tool is already running.");
             }
-
-            // 🔹 실행 상태를 파일에 기록
             ToolStatusManager.SetProcessRunning(true);
 
-            // 🔹 Check license (오래 걸릴 수 있음)
+            // 🔹 학습 중인지 확인
             bool isRunning = await _mssqlDbService.CheckIsTraining();
             if (isRunning)
             {
-                ToolStatusManager.SetProcessRunning(false); // 실패 시 상태 해제
+                ToolStatusManager.SetProcessRunning(false);
                 return BadRequest("The tool is already running.");
             }
-            //Console.WriteLine("Checking license..");
-            //bool hasLicense = Easy.CheckLicense(Euresys.Open_eVision.LicenseFeatures.Features.EasyClassify);
-            //Console.WriteLine($"Has license: {hasLicense}");
-            //if (!hasLicense) throw new Exception("No license found");
-            //_mssqlDbService.InsertLogAsync("create tool and run called", LogLevel.Information);
+
             await _mssqlDbService.InsertLogAsync("Create tool and run called", LogLevel.Information);
-        // Validate required fields
-        if (parameterData.AdmsProcessId == -1)
-            return BadRequest(new NewRecord("AdmsProcessId is required."));
+            Console.WriteLine($"AdmsProcessIds: {string.Join("," , parameterData.AdmsProcessIds)}");
 
-        TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
-        record.CreatedTime = DateTime.Now;
-        //check if instance is already exist
-        if (SingletonAiDuo.GetInstance(parameterData.ImageSize) != null)
-        {
-            //_mssqlDbService.InsertLogAsync("Instance already exists", LogLevel.Debug);
-            if (SingletonAiDuo.GetInstance(parameterData.ImageSize).IsTraining())
+            // ✅ `AdmsProcessIds`가 최소 하나 이상 있어야 함
+            if (parameterData.AdmsProcessIds == null || parameterData.AdmsProcessIds.Count < 1)
             {
-                return BadRequest("The tool is already running.");
+                ToolStatusManager.SetProcessRunning(false);
+                return BadRequest(new NewRecord("At least one AdmsProcessId is required."));
             }
-            return BadRequest(new NewRecord("Instance already exists."));
-        }
-        //await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
-        await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
-        var instance = SingletonAiDuo.CreateInstance(parameterData, _serverSettings);
-        await _mssqlDbService.InsertLogAsync("Initialized instance", LogLevel.Debug);
-
-
-        await _mssqlDbService.InsertLogAsync("Setting parameters", LogLevel.Debug);
-        instance.SetParameters();
-        await _mssqlDbService.InsertLogAsync("Parameters set", LogLevel.Debug);
-        await _mssqlDbService.InsertLogAsync("Start model traning", LogLevel.Information);
-        instance.recordId = record.Id;
-        Dictionary<string, int> dictionary = await _mssqlDbService.GetAdmsProcessInfo(parameterData.AdmsProcessId);
-        string processName = await _mssqlDbService.GetProcessNameById(dictionary["processId"]);
-        Adm adms = await _mssqlDbService.GetAdmsById(dictionary["admsId"]);
-            Console.WriteLine("Record id: " + record.Id);
-        _ = Task.Run(async () =>
-        {
-            await RunOnStaThread(() =>
-            {
-                // 이 부분에서 Euresys 관련 작업 실행
-                try
-                {
-                    _mssqlDbService.InsertLogAsync("Loading Images", LogLevel.Debug).GetAwaiter().GetResult();
-                    Console.WriteLine("Loading images...");
-                    int numImages = 0;
-                    TimeSpan elapsedTime = MeasureExecutionTime.Measure(() =>
-                    {
-                        numImages = instance.LoadImages(processName);
-                    });
-                    if (numImages == 0)
-                    {
-                        return;
-                    }
-                    
-                    Console.WriteLine($"Loaded {numImages} images");
-                    Console.WriteLine($"Elapsed time: {elapsedTime.TotalSeconds} seconds");
-                    _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
-
-                    // Train 메서드도 STA 환경에서 실행됨
-                    instance.Train((isTraining, progress, bestIteration) =>
-                    {
-                        Console.WriteLine($"is training: {isTraining}");
-                        Console.WriteLine($"progress: {progress}");
-                        Console.WriteLine($"best iteration: {bestIteration}");
-                        _mssqlDbService.InsertLogAsync("training ", LogLevel.Trace).GetAwaiter().GetResult();
-                        _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
-
-                        var updates = new Dictionary<string, object>
-                    {
-                        { "Status", TrainingStatus.Running },
-                        { "Progress", progress },
-                        { "BestIteration", bestIteration }
-                    };
-
-                        var newEntry = new ProgressEntry
-                        {
-                            IsTraining = isTraining,
-                            Progress = isTraining ? progress : 1,
-                            BestIteration = bestIteration,
-                            Timestamp = DateTime.Now
-                        };
-
-                        //_mongoDbService.PartialUpdateTraining(updates, record.Id).GetAwaiter().GetResult();
-                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
-
-                        //_mssqlDbService.PushProgressEntry(record.Id, newEntry).GetAwaiter().GetResult();
-                        _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
-                    }).GetAwaiter().GetResult();
-                    string timeStamp = DateTime.Now.ToString("yyyyMMdd");
-                    string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
-                    if (!Directory.Exists(savePath))
-                    {
-                        Directory.CreateDirectory(savePath);
-                    }
-                    instance.SaveModel(savePath + "trainingModel.edltool", adms.LocalIp);
-
-                    //instance.SaveSettings(savePath + "trainingsettings.settings");
-                   
-                    _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
-                    //_mongoDbService.PartialUpdateTraining(new Dictionary<string, object> { { "Status", TrainingStatus.Completed } }, record.Id).GetAwaiter().GetResult();
-                    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Completed }, { "EndTime" , DateTime.Now } }).GetAwaiter().GetResult();
-                    Dictionary<string, float> trainingResults = instance.GetTrainingResult();
-                    //_mongoDbService.UpdateLablesById(record.Id, trainingResult).GetAwaiter().GetResult();
-                    var labelList = trainingResults.Select(kvp => new Label
-                    {
-                        Name = kvp.Key,        // 레이블 이름 (예: "okAccuracy", "weightedError" 등)
-                        Accuracy = kvp.Value,     // 해당 레이블의 값
-                        TrainingRecordId = record.Id  // 연관된 TrainingRecord의 Id
-                    }).ToArray();
-                    Console.WriteLine($"label list: {labelList.ToString()}");
-                    _mssqlDbService.UpdateLabelsByIdAsync(record.Id, labelList).GetAwaiter().GetResult();
-                    instance.StopTraining();
-                    SingletonAiDuo.Reset(parameterData.ImageSize);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                    ToolStatusManager.SetProcessRunning(false);
-                    _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
-                    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
-                    instance.StopTraining();
-                    SingletonAiDuo.Reset(parameterData.ImageSize);
-                    throw;
-                }
-            });
-        });
-            //_mongoDbService.InsertTraining(record).GetAwaiter();
+            Console.WriteLine("before mapping");
+            TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
+            record.CreatedTime = DateTime.Now;
             record.Status = TrainingStatus.Running;
             record.StartTime = DateTime.Now;
+            Console.WriteLine("before insert training ");
             await _mssqlDbService.InsertTrainingAsync(record);
-            _recordId = record.Id;
-        Console.WriteLine("Training record inserted");
-        Console.WriteLine($"Record id: {record.Id}");
-            ToolStatusManager.SetProcessRunning(false);
-        return Ok(new
-        {
-            Message = "Training initialized successfully.",
-            TrainingId = record.Id.ToString()
-        });
-        }
-            catch(Exception error)
-        {
-            _mssqlDbService.PartialUpdateTrainingAsync(_recordId, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
-            ToolStatusManager.SetProcessRunning(false);
-            var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
-            instance.StopTraining();
-            SingletonAiDuo.Reset(parameterData.ImageSize);
-            Console.WriteLine(error.Message);
-            _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);
+            Console.WriteLine("record inserted. Id: " + record.Id);
+            // ✅ TrainingAdmsProcess와 TrainingRecord 연결 (기존 코드 수정 ✅)
+            var trainingAdmsProcesses = parameterData.AdmsProcessIds
+                .Select(id => new TrainingAdmsProcess
+                {
+                    TrainingRecordId = record.Id, // ✅ 저장된 TrainingRecordId 사용
+                    AdmsProcessId = id
+                }).ToList();
 
-            throw;
+            _mssqlDbService.AddRangeTrainingAdmsProcess(trainingAdmsProcesses);
+            // ✅ Singleton 체크
+            if (SingletonAiDuo.GetInstance(parameterData.ImageSize) != null &&
+                SingletonAiDuo.GetInstance(parameterData.ImageSize).IsTraining())
+            {
+                ToolStatusManager.SetProcessRunning(false);
+                return BadRequest("The tool is already running.");
+            }
+
+            await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
+            var instance = SingletonAiDuo.CreateInstance(parameterData, _serverSettings);
+            await _mssqlDbService.InsertLogAsync("Initialized instance", LogLevel.Debug);
+
+            // ✅ AdmsProcessIds에 해당하는 정보 가져오기
+            List<Dictionary<string, int>> admsProcessInfoList = await _mssqlDbService.GetAdmsProcessInfos(parameterData.AdmsProcessIds);
+
+            // ✅ processName 및 adms 조회
+            var processNames = new List<string>();
+            var admsList = new List<Adm>();
+           
+            foreach (var info in admsProcessInfoList)
+            {
+                string processName = await _mssqlDbService.GetProcessNameById(info["processId"]);
+                if (processName.Contains("Default"))
+                {
+                    Console.WriteLine($"Process {processName} is not valid.");
+                    return BadRequest("Default process name should not be included.");
+                }
+                processNames.Add(processName);
+
+                Adm adms = await _mssqlDbService.GetAdmsById(info["admsId"]);
+                admsList.Add(adms);
+            }
+
+            // ✅ 모델 트레이닝 실행
+            _ = Task.Run(async () =>
+            {
+                await RunOnStaThread(() =>
+                {
+                    try
+                    {
+                        int numImages = 0;
+                        TimeSpan elapsedTime = MeasureExecutionTime.Measure(() =>
+                        {
+                            //foreach (var processName in processNames)
+                            //{
+                            //    numImages += instance.LoadImages(processName);
+                            //}
+                            numImages = instance.LoadImages(processNames.ToArray());
+                        });
+
+                        if (numImages == 0) return;
+
+                        _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
+                        instance.SetParameters();
+                        instance.Train((isTraining, progress, bestIteration) =>
+                        {
+                            _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
+                            var updates = new Dictionary<string, object>
+                        {
+                            { "Status", TrainingStatus.Running },
+                            { "Progress", progress },
+                            { "BestIteration", bestIteration }
+                        };
+
+                            var newEntry = new ProgressEntry
+                            {
+                                IsTraining = isTraining,
+                                Progress = isTraining ? progress : 1,
+                                BestIteration = bestIteration,
+                                Timestamp = DateTime.Now
+                            };
+
+                            _mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
+                            _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
+                        }).GetAwaiter().GetResult();
+
+                        // ✅ 여러 개의 프로세스에 대한 모델 저장
+                        string timeStamp = DateTime.Now.ToString("yyyyMMdd");
+                        foreach (var adms in admsList)
+                        {
+                            foreach (var processName in processNames)
+                            {
+                                string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
+                                if (!Directory.Exists(savePath))
+                                {
+                                    Directory.CreateDirectory(savePath);
+                                }
+                                instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
+                            }
+                        }
+
+                        _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
+                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object>
+                    {
+                        { "Status", TrainingStatus.Completed },
+                        { "EndTime" , DateTime.Now }
+                    }).GetAwaiter().GetResult();
+
+                        Dictionary<string, float> trainingResults = instance.GetTrainingResult();
+                        var labelList = trainingResults.Select(kvp => new Label
+                        {
+                            Name = kvp.Key,
+                            Accuracy = kvp.Value,
+                            TrainingRecordId = record.Id
+                        }).ToArray();
+
+                        _mssqlDbService.UpdateLabelsByIdAsync(record.Id, labelList).GetAwaiter().GetResult();
+                        instance.StopTraining();
+                        SingletonAiDuo.Reset(parameterData.ImageSize);
+                        ToolStatusManager.SetProcessRunning(false);
+
+                    }
+                    catch (Exception e)
+                    {
+                        ToolStatusManager.SetProcessRunning(false);
+                        _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
+                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
+                        instance.StopTraining();
+                        SingletonAiDuo.Reset(parameterData.ImageSize);
+                        throw;
+                    }
+                });
+            });
+
+           
+
+            return Ok(new
+            {
+                Message = "Training initialized successfully.",
+                TrainingId = record.Id.ToString()
+            });
+        }
+        catch (Exception error)
+        {
+            Console.WriteLine("Error: ", error.Message);
+            if(_recordId == 0) {
+                throw;
+            }
+            else
+            {
+                _mssqlDbService.PartialUpdateTrainingAsync(_recordId, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
+                ToolStatusManager.SetProcessRunning(false);
+                var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
+                instance.StopTraining();
+                SingletonAiDuo.Reset(parameterData.ImageSize);
+                Console.WriteLine(error.Message);
+                _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);
+                throw;
+            }
+            
         }
     }
 

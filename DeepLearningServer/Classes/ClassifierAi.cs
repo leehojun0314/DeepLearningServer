@@ -33,7 +33,7 @@ namespace DeepLearningServer.Classes
                     eImage.Load(imagePaths[i]); // 로드
                     images[i] = eImage;         // EBaseROI 배열에 저장
                 }
-
+                classifier.EnableGPU = true;
                 return classifier.Classify(ref images);
             }
             else

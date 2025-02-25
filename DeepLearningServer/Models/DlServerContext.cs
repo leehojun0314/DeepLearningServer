@@ -34,7 +34,7 @@ public partial class DlServerContext : DbContext
     public virtual DbSet<RecipeFile> RecipeFiles { get; set; }
 
     public virtual DbSet<TrainingRecord> TrainingRecords { get; set; }
-
+    public virtual DbSet<TrainingAdmsProcess> TrainingAdmsProcess { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adm>(entity =>
@@ -48,20 +48,24 @@ public partial class DlServerContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnType("datetime");
         });
 
+        modelBuilder.Entity<Process>(entity =>
+        {
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+            entity.Property(e => e.Name).HasMaxLength(100);
+            entity.Property(e => e.UpdatedAt).HasColumnType("datetime");
+        });
         modelBuilder.Entity<AdmsProcess>(entity =>
         {
             entity.HasIndex(e => e.AdmsId, "IX_AdmsProcesses_AdmsId");
 
             entity.HasIndex(e => e.ProcessId, "IX_AdmsProcesses_ProcessId");
-            entity.HasOne(d => d.Adms).WithMany(p => p.AdmsProcesses).HasForeignKey(d => d.AdmsId);
+            entity.HasOne(d => d.Adms).WithMany(p => p.AdmsProcesses).HasForeignKey(d => d.AdmsId).OnDelete(DeleteBehavior.Restrict);
 
-            entity.HasOne(d => d.Process).WithMany(p => p.AdmsProcesses).HasForeignKey(d => d.ProcessId);
-            //entity.Property(d => d.LastSyncDate).HasColumnType("datetime");
-            //entity.Property(d => d.IsTrainned).HasColumnType("bit");
-            //entity.Property(d => d.IsCategorized).HasColumnType("bit");
-            //entity.Property(d=>d.L).HasColumnType("int");
-            //entity.Property(d => d.M).HasColumnType("int");
-            //entity.Property(d => d.S).HasColumnType("int");
+            entity.HasOne(d => d.Process).WithMany(p => p.AdmsProcesses).HasForeignKey(d => d.ProcessId).OnDelete(DeleteBehavior.Restrict);
+            // ✅ TrainingAdmsProcess와의 다대다 관계 설정
+            entity.HasMany(ap => ap.TrainingAdmsProcesses)
+                .WithOne(tap => tap.AdmsProcess)
+                .HasForeignKey(tap => tap.AdmsProcessId);
 
         });
         modelBuilder.Entity<AdmsProcessType>(entity =>
@@ -107,12 +111,6 @@ public partial class DlServerContext : DbContext
             entity.HasOne(d => d.TrainingRecord).WithMany(p => p.Labels).HasForeignKey(d => d.TrainingRecordId);
         });
 
-        modelBuilder.Entity<Process>(entity =>
-        {
-            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
-            entity.Property(e => e.Name).HasMaxLength(100);
-            entity.Property(e => e.UpdatedAt).HasColumnType("datetime");
-        });
 
         modelBuilder.Entity<ProgressEntry>(entity =>
         {
@@ -138,15 +136,23 @@ public partial class DlServerContext : DbContext
 
         modelBuilder.Entity<TrainingRecord>(entity =>
         {
-            entity.HasIndex(e => e.AdmsProcessId, "IX_TrainingRecords_AdmsProcessId");
+            entity.HasMany(ap => ap.TrainingAdmsProcesses)
+               .WithOne(tap => tap.TrainingRecord)
+               .HasForeignKey(tap => tap.TrainingRecordId);
             entity.Property(e => e.Status).HasMaxLength(50).HasConversion<string>(v => v.ToString(), v => Enum.Parse<TrainingStatus>(v));
-            entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingRecords).HasForeignKey(d => d.AdmsProcessId);
+            //entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingRecords).HasForeignKey(d => d.AdmsProcessId);
         });
         modelBuilder.Entity<LogRecord>(entity =>
         {
             entity.Property(e => e.CreatedAt).HasColumnType("datetime");
             entity.Property(e => e.Message).HasMaxLength(255);
             entity.Property(e => e.Level).HasMaxLength(50).HasConversion<string>(v => v.ToString(), v => Enum.Parse<LogLevel>(v));
+        });
+        modelBuilder.Entity<TrainingAdmsProcess>(entity => {
+            entity.HasIndex(e => e.AdmsProcessId, "IX_TrainingAdmsProcesses_AdmsProcessId");
+            entity.HasIndex(e => e.TrainingRecordId, "IX_TrainingAdmsProcesses_TrainingRecordId");
+            entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingAdmsProcesses).HasForeignKey(d => d.AdmsProcessId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(d => d.TrainingRecord).WithMany(p => p.TrainingAdmsProcesses).HasForeignKey(d => d.TrainingRecordId).OnDelete(DeleteBehavior.Restrict);
         });
         OnModelCreatingPartial(modelBuilder);
     }

@@ -10,7 +10,8 @@ namespace DeepLearningServer.Classes
         {
             // 최상위: CreateAndRunModel → TrainingRecord
             CreateMap<CreateAndRunModel, TrainingRecord>()
-                .ForMember(dest => dest.AdmsProcessId, opt => opt.MapFrom(src => src.AdmsProcessId))
+                .ForMember(dest => dest.TrainingAdmsProcesses, opt => opt.MapFrom(src =>
+                     src.AdmsProcessIds.Select(id => new TrainingAdmsProcess { AdmsProcessId = id }).ToList()))
                 .ForMember(dest => dest.ImageSize, opt => opt.MapFrom(src => src.ImageSize))
                 .ForMember(dest => dest.Labels, opt => opt.MapFrom(src => src.Categories
                 .Select(static name => new Label { Name = name }).ToList()))

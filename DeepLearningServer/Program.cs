@@ -25,7 +25,7 @@ public class Program
         builder.Services.Configure<SqlDbSettings>(
             builder.Configuration.GetSection("ConnectionStrings")
         );
-        
+
         var connectionString = builder.Configuration.GetSection("ConnectionStrings:DefaultConnection").Value;
 
         // MSSQL 데이터베이스 연결 설정
@@ -57,14 +57,21 @@ public class Program
         });
         builder.WebHost.ConfigureKestrel(options =>
         {
-            options.ListenAnyIP(8081);
+            options.ListenAnyIP(8082);
         });
 
         var app = builder.Build();
         using (var scope = builder.Services.BuildServiceProvider().CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<DlServerContext>();
-            dbContext.Database.Migrate(); // 자동 마이그레이션 수행
+            try
+            {
+                dbContext.Database.Migrate(); // 자동 마이그레이션 수행
+            }
+            catch (Exception error)
+            {
+                Console.WriteLine("Error on database migration");
+            }
         }
         //app.MapOpenApi();
         app.MapGet("/", () =>

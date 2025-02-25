@@ -5,7 +5,7 @@
 namespace DeepLearningServer.Migrations
 {
     /// <inheritdoc />
-    public partial class localhost : Migration
+    public partial class TrainingRecordFix : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

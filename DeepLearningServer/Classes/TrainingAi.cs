@@ -53,6 +53,7 @@ public class TrainingAi
 
     #endregion
 
+
     #region Load images
 
     public int LoadImages(string processId)
@@ -60,7 +61,7 @@ public class TrainingAi
         if (parameterData == null) throw new Exception("Parameter data is null");
         var imagePath = parameterData.ImageSize switch
         {
-            ImageSize.Medium => serverSettings.MiddleImagePath,
+            ImageSize.Middle => serverSettings.MiddleImagePath,
             ImageSize.Large => serverSettings.LargeImagePath,
             _ => throw new Exception($"Error on loading images. Invalid size. {parameterData.ImageSize}"),
         };
@@ -99,10 +100,54 @@ public class TrainingAi
             return dataset.NumImages;
         }
     }
-
+    public int LoadImages(string[] processNames)
+    {
+        if (parameterData == null) throw new Exception("Parameter data is null");
+        var imagePath = parameterData.ImageSize switch
+        {
+            ImageSize.Middle => serverSettings.MiddleImagePath,
+            ImageSize.Large => serverSettings.LargeImagePath,
+            _ => throw new Exception($"Error on loading images. Invalid size. {parameterData.ImageSize}"),
+        };
+        if (dataset == null) throw new Exception("Dataset is null");
+        Console.WriteLine($"Loading images from {imagePath}");
+        if (categories != null)
+        {
+            foreach (var category in categories)
+            {
+                var upperCategory = category.ToUpper();
+                Console.WriteLine("upper category: " + upperCategory);
+                dataset.AddImages(imagePath + $@"\NG\BASE\{upperCategory}\*.jpg", upperCategory);
+                // dataset.AddImages("D:\\Images\\DL_SERVER TEST\\20250107\\02_8AE05B-L-0\\J96972.1\\*.jpg", upperCategory);
+                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg");
+            }
+        }
+        //Load base OK images (processed images)
+        foreach (var processName in processNames)
+        {
+            dataset.AddImages(imagePath + $@"\OK\{processName}\BASE\*.jpg", "OK");
+            //Load new OK images (processed images)
+            dataset.AddImages(imagePath + $@"\OK\{processName}\NEW\*.jpg", "OK");
+        }
+        //var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
+        //dataset.SplitDataset(tvDataset, testDataset, firstProportion);
+        //var secondProportion = parameterData.TrainingProportion /
+        //(parameterData.TrainingProportion + parameterData.ValidationProportion);
+        //tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
+        Console.WriteLine("Num labels: " + dataset.NumLabels);
+        Console.WriteLine($"num images: {dataset.NumImages}");
+        if (dataset.NumImages < 1)
+        {
+            throw new Exception("Error on loading images. Images not found");
+        }
+        else
+        {
+            return dataset.NumImages;
+        }
+    }
     #endregion
 
-    #region Set parameters
+        #region Set parameters
 
     public void SetParameters()
     {
@@ -190,12 +235,7 @@ public class TrainingAi
             throw new Exception("No classifier was trained");
         }
     }
-    //public void ResumeTraining()
-    //{
-    //    if(classifier != null)
-    //    {
-    //    }
-    //}
+
 
     public Dictionary<string, float> GetStatus()
     {
@@ -298,7 +338,7 @@ public class TrainingAi
         dataAug = null;
     }
 
-    public async Task SaveModel(string filePath, string clientIpAddress)
+    public async Task SaveModel(string filePath, string clientIpAddress, ImageSize imageSize)
     {
         try
         {
@@ -327,7 +367,9 @@ public class TrainingAi
                     form.Add(fileContent, "File", Path.GetFileName(filePath));
 
                     // 🔹 ModelPath 추가
-                    form.Add(new StringContent("D:/"+ Path.GetFileName(filePath)), "ModelPath");
+                    //form.Add(new StringContent("D:/"+ Path.GetFileName(filePath)), "ModelPath");
+                    form.Add(new StringContent(Path.GetFileName(filePath)), "ModelPath");
+                    form.Add(new StringContent(imageSize.ToString()), "ImageSize");
                     Console.WriteLine($"form.ToString(): {form.ToString()}");
                     Console.WriteLine("client ip address: " + clientIpAddress);
                     // 🔹 API 엔드포인트

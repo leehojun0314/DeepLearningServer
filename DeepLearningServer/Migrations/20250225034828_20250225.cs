@@ -5,7 +5,7 @@
 namespace DeepLearningServer.Migrations
 {
     /// <inheritdoc />
-    public partial class AddTrainingStatusConversion : Migration
+    public partial class _20250225 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

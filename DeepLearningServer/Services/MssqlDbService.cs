@@ -26,6 +26,7 @@ namespace DeepLearningServer.Services
 
         public async Task InsertLogAsync(string message, LogLevel logLevel)
         {
+            Console.WriteLine("Log: " + message);
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
             var logRecord = new LogRecord
             {
@@ -64,19 +65,55 @@ namespace DeepLearningServer.Services
             dictionary.Add("processId", admsProcess.ProcessId);
             return dictionary;
         }
+        public async Task<List<Dictionary<string, int>>> GetAdmsProcessInfos(List<int> admsProcessIds)
+        {
+            Console.WriteLine("Adms process ids: " + string.Join(", ", admsProcessIds));
+
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+
+            var admsProcesses = await context.AdmsProcesses
+                .Where(ap => admsProcessIds.Contains(ap.Id)) // ✅ 여러 개의 ID 조회
+                .ToListAsync();
+
+            if (!admsProcesses.Any())
+                throw new NullReferenceException("No AdmsProcess found");
+            Console.WriteLine($"Found AdmsProcesses: {string.Join(",", admsProcesses.ToArray().Select(el => el.Id))}");
+            List<Dictionary<string, int>> result = new List<Dictionary<string, int>>();
+
+            foreach (var admsProcess in admsProcesses)
+            {
+                result.Add(new Dictionary<string, int>
+                {
+                    { "admsId", admsProcess.AdmsId },
+                    { "processId", admsProcess.ProcessId }
+                });
+            }
+
+            return result;
+        }
+
         public async Task InsertTrainingAsync(TrainingRecord trainingRecord)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
             context.TrainingRecords.Add(trainingRecord);
             await context.SaveChangesAsync();
         }
-
+        public async Task AddRangeTrainingAdmsProcess(List<TrainingAdmsProcess> trainingAdmsProcess)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            context.TrainingAdmsProcess.AddRange(trainingAdmsProcess);
+            await context.SaveChangesAsync();
+        }
         public async Task PartialUpdateTrainingAsync(int id, Dictionary<string, object> updates)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
             var trainingRecord = await context.TrainingRecords.FindAsync(id);
             if (trainingRecord == null)
-                throw new NullReferenceException("TrainingRecord not found");
+            {
+                Console.WriteLine($"TrainingRecord not found. Training record id: {id}");
+                return;
+            }
+                //throw new NullReferenceException("TrainingRecord not found");
 
             foreach (var kvp in updates)
             {

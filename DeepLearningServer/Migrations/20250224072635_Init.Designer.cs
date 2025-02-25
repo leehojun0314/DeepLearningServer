@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeepLearningServer.Migrations
 {
     [DbContext(typeof(DlServerContext))]
-    [Migration("20250216152708_removeLearningRatePara")]
-    partial class removeLearningRatePara
+    [Migration("20250224072635_Init")]
+    partial class Init
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -25,7 +25,7 @@ namespace DeepLearningServer.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("DeepLearningServer.Models.Adms", b =>
+            modelBuilder.Entity("DeepLearningServer.Models.Adm", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -33,11 +33,25 @@ namespace DeepLearningServer.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CpuId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime");
 
-                    b.Property<string>("Name")
+                    b.Property<string>("LocalIp")
                         .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("MacAddress")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
@@ -77,6 +91,79 @@ namespace DeepLearningServer.Migrations
                     b.ToTable("AdmsProcesses");
                 });
 
+            modelBuilder.Entity("DeepLearningServer.Models.AdmsProcessType", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdmsProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsCategorized")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsTrainned")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastSyncDate")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_AdmsProcessTypes_AdmsProcessId");
+
+                    b.ToTable("AdmsProcessType");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdmsProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CapturedTime")
+                        .HasColumnType("datetime");
+
+                    b.Property<string>("Directory")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("Size")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_ImageFiles_AdmsProcessId");
+
+                    b.ToTable("ImageFiles");
+                });
+
             modelBuilder.Entity("DeepLearningServer.Models.Label", b =>
                 {
                     b.Property<int>("Id")
@@ -84,6 +171,9 @@ namespace DeepLearningServer.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<float?>("Accuracy")
+                        .HasColumnType("real");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -109,15 +199,17 @@ namespace DeepLearningServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime");
 
                     b.Property<string>("Level")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Message")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.HasKey("Id");
 
@@ -133,9 +225,6 @@ namespace DeepLearningServer.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime");
-
-                    b.Property<DateTime>("LastSyncDate")
                         .HasColumnType("datetime");
 
                     b.Property<string>("Name")
@@ -189,7 +278,7 @@ namespace DeepLearningServer.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("AdmsId")
+                    b.Property<int>("AdmsProcessId")
                         .HasColumnType("int");
 
                     b.Property<string>("Content")
@@ -204,16 +293,34 @@ namespace DeepLearningServer.Migrations
                     b.Property<DateTime>("LastModified")
                         .HasColumnType("datetime");
 
-                    b.Property<int>("ProcessId")
+                    b.HasKey("Id");
+
+                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_RecipeFiles_AdmsProcessId");
+
+                    b.ToTable("RecipeFiles");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.TrainingAdmsProcess", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AdmsProcessId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TrainingRecordId")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex(new[] { "AdmsId" }, "IX_RecipeFiles_AdmsId");
+                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_TrainingAdmsProcesses_AdmsProcessId");
 
-                    b.HasIndex(new[] { "ProcessId" }, "IX_RecipeFiles_ProcessId");
+                    b.HasIndex(new[] { "TrainingRecordId" }, "IX_TrainingAdmsProcesses_TrainingRecordId");
 
-                    b.ToTable("RecipeFiles");
+                    b.ToTable("TrainingAdmsProcess");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
@@ -226,6 +333,9 @@ namespace DeepLearningServer.Migrations
 
                     b.Property<double?>("Accuracy")
                         .HasColumnType("float");
+
+                    b.Property<int>("AdmsProcessId")
+                        .HasColumnType("int");
 
                     b.Property<int>("BatchSize")
                         .HasColumnType("int");
@@ -338,20 +448,8 @@ namespace DeepLearningServer.Migrations
                     b.Property<string>("ModelPath")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("ProcessId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<float?>("Progress")
                         .HasColumnType("real");
-
-                    b.Property<string>("RecipeId")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("SettingId")
-                        .HasColumnType("uniqueidentifier")
-                        .HasColumnName("SettingID");
 
                     b.Property<DateTime>("StartTime")
                         .HasColumnType("datetime2");
@@ -368,26 +466,50 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_TrainingRecords_AdmsProcessId");
+
                     b.ToTable("TrainingRecords");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.AdmsProcess", b =>
                 {
-                    b.HasOne("DeepLearningServer.Models.Adms", "Adms")
+                    b.HasOne("DeepLearningServer.Models.Adm", "Adms")
                         .WithMany("AdmsProcesses")
                         .HasForeignKey("AdmsId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("DeepLearningServer.Models.Process", "Process")
                         .WithMany("AdmsProcesses")
                         .HasForeignKey("ProcessId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Adms");
 
                     b.Navigation("Process");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.AdmsProcessType", b =>
+                {
+                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
+                        .WithMany("AdmsProcessTypes")
+                        .HasForeignKey("AdmsProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AdmsProcess");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
+                {
+                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
+                        .WithMany("ImageFiles")
+                        .HasForeignKey("AdmsProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AdmsProcess");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Label", b =>
@@ -414,35 +536,66 @@ namespace DeepLearningServer.Migrations
 
             modelBuilder.Entity("DeepLearningServer.Models.RecipeFile", b =>
                 {
-                    b.HasOne("DeepLearningServer.Models.Adms", "Adms")
+                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
                         .WithMany("RecipeFiles")
-                        .HasForeignKey("AdmsId")
+                        .HasForeignKey("AdmsProcessId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("DeepLearningServer.Models.Process", "Process")
-                        .WithMany("RecipeFiles")
-                        .HasForeignKey("ProcessId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Adms");
-
-                    b.Navigation("Process");
+                    b.Navigation("AdmsProcess");
                 });
 
-            modelBuilder.Entity("DeepLearningServer.Models.Adms", b =>
+            modelBuilder.Entity("DeepLearningServer.Models.TrainingAdmsProcess", b =>
+                {
+                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
+                        .WithMany("TrainingAdmsProcesses")
+                        .HasForeignKey("AdmsProcessId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("DeepLearningServer.Models.TrainingRecord", "TrainingRecord")
+                        .WithMany("TrainingAdmsProcesses")
+                        .HasForeignKey("TrainingRecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AdmsProcess");
+
+                    b.Navigation("TrainingRecord");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
+                {
+                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
+                        .WithMany("TrainingRecords")
+                        .HasForeignKey("AdmsProcessId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AdmsProcess");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.Adm", b =>
                 {
                     b.Navigation("AdmsProcesses");
+                });
+
+            modelBuilder.Entity("DeepLearningServer.Models.AdmsProcess", b =>
+                {
+                    b.Navigation("AdmsProcessTypes");
+
+                    b.Navigation("ImageFiles");
 
                     b.Navigation("RecipeFiles");
+
+                    b.Navigation("TrainingAdmsProcesses");
+
+                    b.Navigation("TrainingRecords");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Process", b =>
                 {
                     b.Navigation("AdmsProcesses");
-
-                    b.Navigation("RecipeFiles");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
@@ -450,6 +603,8 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("Labels");
 
                     b.Navigation("ProgressEntries");
+
+                    b.Navigation("TrainingAdmsProcesses");
                 });
 #pragma warning restore 612, 618
         }

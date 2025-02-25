@@ -16,8 +16,6 @@ public partial class TrainingRecord
 
     public DateTime? EndTime { get; set; }
 
-    public int AdmsProcessId { get; set; }
-
     public string? ModelName { get; set; } = null!;
 
     public string? ModelPath { get; set; } = null!;
@@ -96,9 +94,9 @@ public partial class TrainingRecord
 
     public int BatchSize { get; set; }
 
-    public virtual AdmsProcess AdmsProcess { get; set; } = null!;
-
     public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 
     public virtual ICollection<ProgressEntry> ProgressEntries { get; set; } = new List<ProgressEntry>();
+    public virtual ICollection<TrainingAdmsProcess> TrainingAdmsProcesses { get; set; } = new List<TrainingAdmsProcess>();
+
 }

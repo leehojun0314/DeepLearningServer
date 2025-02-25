@@ -2,6 +2,6 @@
 
 public enum ImageSize
 {
-    Medium,
+    Middle,
     Large
 }

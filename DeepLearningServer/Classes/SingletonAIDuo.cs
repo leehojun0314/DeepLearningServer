@@ -17,7 +17,7 @@ public class SingletonAiDuo
 
     public static TrainingAi Instance(CreateAndRunModel parameterData, ServerSettings serverSettings)
     {
-        if (parameterData.ImageSize == ImageSize.Medium)
+        if (parameterData.ImageSize == ImageSize.Middle)
         {
             if (_instanceMedium == null) _instanceMedium = new TrainingAi(parameterData, serverSettings);
             return _instanceMedium;
@@ -35,7 +35,7 @@ public class SingletonAiDuo
 
     public static TrainingAi CreateInstance(CreateAndRunModel parameterData, ServerSettings serverSettings)
     {
-        if (parameterData.ImageSize == ImageSize.Medium)
+        if (parameterData.ImageSize == ImageSize.Middle)
         {
             _instanceMedium = new TrainingAi(parameterData, serverSettings);
             
@@ -52,7 +52,7 @@ public class SingletonAiDuo
     {
         if (imageSize == ImageSize.Large) return _instanceLarge;
 
-        if (imageSize == ImageSize.Medium) return _instanceMedium;
+        if (imageSize == ImageSize.Middle) return _instanceMedium;
 
         return null;
     }
@@ -61,6 +61,6 @@ public class SingletonAiDuo
     {
         
         if (imageSize == ImageSize.Large) _instanceLarge = null;
-        if (imageSize == ImageSize.Medium) _instanceMedium = null;
+        if (imageSize == ImageSize.Middle) _instanceMedium = null;
     }
 }

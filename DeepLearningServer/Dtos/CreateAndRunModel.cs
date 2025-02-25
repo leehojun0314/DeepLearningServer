@@ -8,10 +8,12 @@ public class CreateAndRunModel
 {
     //public required string RecipeId { get; set; }
     //public required string ProcessId { get; set; }
-    public required int AdmsProcessId { get; set; } = -1;
+    public required List<int> AdmsProcessIds { get; set; }
     public required ImageSize ImageSize { get; set; }
     public string[] Categories { get; set; }
 
+    public bool IsDefaultModel { get; set; }
+    public bool ClientModelDestination { get; set; }
     //[DefaultValue(0.7f)]
     //public float TrainingProportion { get; set; } = 0.7f;
 
