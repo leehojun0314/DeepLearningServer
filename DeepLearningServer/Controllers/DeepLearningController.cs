@@ -24,7 +24,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     private readonly ServerSettings _serverSettings = serverSettings.Value;
     private readonly MssqlDbService _mssqlDbService = mssqlDbService;
     private readonly IMapper _mapper = mapper;
-    private int _recordId;
+    private int _recordId = 0;
 
     [HttpPost("run")]
     public async Task<IActionResult> CreateToolAndRun([FromBody] CreateAndRunModel parameterData)
@@ -55,13 +55,12 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 ToolStatusManager.SetProcessRunning(false);
                 return BadRequest(new NewRecord("At least one AdmsProcessId is required."));
             }
-            Console.WriteLine("before mapping");
             TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
             record.CreatedTime = DateTime.Now;
             record.Status = TrainingStatus.Running;
             record.StartTime = DateTime.Now;
-            Console.WriteLine("before insert training ");
             await _mssqlDbService.InsertTrainingAsync(record);
+            _recordId = record.Id; 
             Console.WriteLine("record inserted. Id: " + record.Id);
             // ✅ TrainingAdmsProcess와 TrainingRecord 연결 (기존 코드 수정 ✅)
             var trainingAdmsProcesses = parameterData.AdmsProcessIds
@@ -155,11 +154,14 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             foreach (var processName in processNames)
                             {
                                 string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
+                                string modelName = $"{processName}.edltool";
+
                                 if (!Directory.Exists(savePath))
                                 {
                                     Directory.CreateDirectory(savePath);
                                 }
-                                instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
+                                //instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
+                                instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
                             }
                         }
 
@@ -206,6 +208,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         }
         catch (Exception error)
         {
+            ToolStatusManager.SetProcessRunning(false);
             Console.WriteLine("Error: ", error.Message);
             if(_recordId == 0) {
                 throw;
@@ -213,7 +216,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             else
             {
                 _mssqlDbService.PartialUpdateTrainingAsync(_recordId, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
-                ToolStatusManager.SetProcessRunning(false);
                 var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
                 instance.StopTraining();
                 SingletonAiDuo.Reset(parameterData.ImageSize);

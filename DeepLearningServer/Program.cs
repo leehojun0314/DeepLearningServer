@@ -76,6 +76,7 @@ public class Program
         //app.MapOpenApi();
         app.MapGet("/", () =>
             "Greetings from deep learning server " + DateTime.Now.ToLongTimeString());
+        app.UseMiddleware<GlobalExceptionMiddleware>();
 
         app.UseSwagger();
         app.UseSwaggerUI();

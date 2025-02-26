@@ -11,15 +11,11 @@ public partial class RecipeFile
 
     public string Content { get; set; } = null!;
 
-    //public int ProcessId { get; set; }
+    public string FileType { get; set; } = null!;
 
-    //public int AdmsId { get; set; }
     public int AdmsProcessId { get; set; }
 
     public DateTime LastModified { get; set; }
 
     public virtual AdmsProcess AdmsProcess { get; set; } = null!;
-    //public virtual Adm Adms { get; set; } = null!;
-
-    //public virtual Process Process { get; set; } = null!;
 }

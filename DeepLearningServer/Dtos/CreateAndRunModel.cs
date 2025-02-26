@@ -6,22 +6,20 @@ namespace DeepLearningServer.Dtos;
 
 public class CreateAndRunModel
 {
-    //public required string RecipeId { get; set; }
-    //public required string ProcessId { get; set; }
     public required List<int> AdmsProcessIds { get; set; }
     public required ImageSize ImageSize { get; set; }
     public string[] Categories { get; set; }
-
     public bool IsDefaultModel { get; set; }
-    public bool ClientModelDestination { get; set; }
-    //[DefaultValue(0.7f)]
-    //public float TrainingProportion { get; set; } = 0.7f;
+    [DefaultValue("Middle/  ")]
+    public string ClientModelDestination { get; set; } = "Middle/";
+    [DefaultValue(0.7f)]
+    public float TrainingProportion { get; set; } = 0.7f;
 
-    //[DefaultValue(0.2f)]
-    //public float ValidationProportion { get; set; } = 0.2f;
+    [DefaultValue(0.2f)]
+    public float ValidationProportion { get; set; } = 0.2f;
 
-    //[DefaultValue(0.1f)]
-    //public float TestProportion { get; set; } = 0.1f;
+    [DefaultValue(0.1f)]
+    public float TestProportion { get; set; } = 0.1f;
 
     [DefaultValue(50)]
     public int Iterations { get; set; } = 50;

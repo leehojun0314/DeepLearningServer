@@ -61,6 +61,61 @@ namespace DeepLearningServer.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "TrainingRecords",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    ImageSize = table.Column<int>(type: "int", nullable: false),
+                    CreatedTime = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    StartTime = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    EndTime = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ModelName = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ModelPath = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    Accuracy = table.Column<double>(type: "float", nullable: true),
+                    Loss = table.Column<double>(type: "float", nullable: true),
+                    Progress = table.Column<float>(type: "real", nullable: true),
+                    BestIteration = table.Column<int>(type: "int", nullable: true),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
+                    MaxRotation = table.Column<float>(type: "real", nullable: false),
+                    MaxVerticalShift = table.Column<float>(type: "real", nullable: false),
+                    MaxHorizontalShift = table.Column<float>(type: "real", nullable: false),
+                    MinScale = table.Column<float>(type: "real", nullable: false),
+                    MaxScale = table.Column<float>(type: "real", nullable: false),
+                    MaxVerticalShear = table.Column<float>(type: "real", nullable: false),
+                    MaxHorizontalShear = table.Column<float>(type: "real", nullable: false),
+                    VerticalFlip = table.Column<bool>(type: "bit", nullable: false),
+                    HorizontalFlip = table.Column<bool>(type: "bit", nullable: false),
+                    MaxBrightnessOffset = table.Column<float>(type: "real", nullable: false),
+                    MaxContrastGain = table.Column<float>(type: "real", nullable: false),
+                    MinContrastGain = table.Column<float>(type: "real", nullable: false),
+                    MaxGamma = table.Column<float>(type: "real", nullable: false),
+                    MinGamma = table.Column<float>(type: "real", nullable: false),
+                    HueOffset = table.Column<float>(type: "real", nullable: false),
+                    MaxSaturationGain = table.Column<float>(type: "real", nullable: false),
+                    MinSaturationGain = table.Column<float>(type: "real", nullable: false),
+                    MaxGaussianDeviation = table.Column<float>(type: "real", nullable: false),
+                    MinGaussianDeviation = table.Column<float>(type: "real", nullable: false),
+                    MaxSpeckleDeviation = table.Column<float>(type: "real", nullable: false),
+                    MinSpeckleDeviation = table.Column<float>(type: "real", nullable: false),
+                    MaxSaltPepperNoise = table.Column<float>(type: "real", nullable: false),
+                    MinSaltPepperNoise = table.Column<float>(type: "real", nullable: false),
+                    ClassifierCapacity = table.Column<int>(type: "int", nullable: false),
+                    ImageCacheSize = table.Column<int>(type: "int", nullable: false),
+                    ImageWidth = table.Column<int>(type: "int", nullable: false),
+                    ImageHeight = table.Column<int>(type: "int", nullable: false),
+                    ImageChannels = table.Column<int>(type: "int", nullable: false),
+                    UsePretrainedModel = table.Column<bool>(type: "bit", nullable: false),
+                    ComputeHeatMap = table.Column<bool>(type: "bit", nullable: false),
+                    EnableHistogramEqualization = table.Column<bool>(type: "bit", nullable: false),
+                    BatchSize = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TrainingRecords", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "AdmsProcesses",
                 columns: table => new
                 {
@@ -84,6 +139,50 @@ namespace DeepLearningServer.Migrations
                         principalTable: "Processes",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Labels",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Accuracy = table.Column<float>(type: "real", nullable: true),
+                    TrainingRecordId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Labels", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Labels_TrainingRecords_TrainingRecordId",
+                        column: x => x.TrainingRecordId,
+                        principalTable: "TrainingRecords",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ProgressEntries",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    IsTraining = table.Column<bool>(type: "bit", nullable: false),
+                    Progress = table.Column<double>(type: "float", nullable: false),
+                    BestIteration = table.Column<double>(type: "float", nullable: false),
+                    Timestamp = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    TrainingRecordId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ProgressEntries", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ProgressEntries_TrainingRecords_TrainingRecordId",
+                        column: x => x.TrainingRecordId,
+                        principalTable: "TrainingRecords",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -141,6 +240,7 @@ namespace DeepLearningServer.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     FileName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Content = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    FileType = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
                     AdmsProcessId = table.Column<int>(type: "int", nullable: false),
                     LastModified = table.Column<DateTime>(type: "datetime", nullable: false)
                 },
@@ -151,112 +251,6 @@ namespace DeepLearningServer.Migrations
                         name: "FK_RecipeFiles_AdmsProcesses_AdmsProcessId",
                         column: x => x.AdmsProcessId,
                         principalTable: "AdmsProcesses",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "TrainingRecords",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    ImageSize = table.Column<int>(type: "int", nullable: false),
-                    CreatedTime = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    StartTime = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    EndTime = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    AdmsProcessId = table.Column<int>(type: "int", nullable: false),
-                    ModelName = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ModelPath = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    Accuracy = table.Column<double>(type: "float", nullable: true),
-                    Loss = table.Column<double>(type: "float", nullable: true),
-                    Progress = table.Column<float>(type: "real", nullable: true),
-                    BestIteration = table.Column<int>(type: "int", nullable: true),
-                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    MaxRotation = table.Column<float>(type: "real", nullable: false),
-                    MaxVerticalShift = table.Column<float>(type: "real", nullable: false),
-                    MaxHorizontalShift = table.Column<float>(type: "real", nullable: false),
-                    MinScale = table.Column<float>(type: "real", nullable: false),
-                    MaxScale = table.Column<float>(type: "real", nullable: false),
-                    MaxVerticalShear = table.Column<float>(type: "real", nullable: false),
-                    MaxHorizontalShear = table.Column<float>(type: "real", nullable: false),
-                    VerticalFlip = table.Column<bool>(type: "bit", nullable: false),
-                    HorizontalFlip = table.Column<bool>(type: "bit", nullable: false),
-                    MaxBrightnessOffset = table.Column<float>(type: "real", nullable: false),
-                    MaxContrastGain = table.Column<float>(type: "real", nullable: false),
-                    MinContrastGain = table.Column<float>(type: "real", nullable: false),
-                    MaxGamma = table.Column<float>(type: "real", nullable: false),
-                    MinGamma = table.Column<float>(type: "real", nullable: false),
-                    HueOffset = table.Column<float>(type: "real", nullable: false),
-                    MaxSaturationGain = table.Column<float>(type: "real", nullable: false),
-                    MinSaturationGain = table.Column<float>(type: "real", nullable: false),
-                    MaxGaussianDeviation = table.Column<float>(type: "real", nullable: false),
-                    MinGaussianDeviation = table.Column<float>(type: "real", nullable: false),
-                    MaxSpeckleDeviation = table.Column<float>(type: "real", nullable: false),
-                    MinSpeckleDeviation = table.Column<float>(type: "real", nullable: false),
-                    MaxSaltPepperNoise = table.Column<float>(type: "real", nullable: false),
-                    MinSaltPepperNoise = table.Column<float>(type: "real", nullable: false),
-                    ClassifierCapacity = table.Column<int>(type: "int", nullable: false),
-                    ImageCacheSize = table.Column<int>(type: "int", nullable: false),
-                    ImageWidth = table.Column<int>(type: "int", nullable: false),
-                    ImageHeight = table.Column<int>(type: "int", nullable: false),
-                    ImageChannels = table.Column<int>(type: "int", nullable: false),
-                    UsePretrainedModel = table.Column<bool>(type: "bit", nullable: false),
-                    ComputeHeatMap = table.Column<bool>(type: "bit", nullable: false),
-                    EnableHistogramEqualization = table.Column<bool>(type: "bit", nullable: false),
-                    BatchSize = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_TrainingRecords", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_TrainingRecords_AdmsProcesses_AdmsProcessId",
-                        column: x => x.AdmsProcessId,
-                        principalTable: "AdmsProcesses",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Labels",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Accuracy = table.Column<float>(type: "real", nullable: true),
-                    TrainingRecordId = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Labels", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Labels_TrainingRecords_TrainingRecordId",
-                        column: x => x.TrainingRecordId,
-                        principalTable: "TrainingRecords",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ProgressEntries",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "int", nullable: false)
-                        .Annotation("SqlServer:Identity", "1, 1"),
-                    IsTraining = table.Column<bool>(type: "bit", nullable: false),
-                    Progress = table.Column<double>(type: "float", nullable: false),
-                    BestIteration = table.Column<double>(type: "float", nullable: false),
-                    Timestamp = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    TrainingRecordId = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ProgressEntries", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_ProgressEntries_TrainingRecords_TrainingRecordId",
-                        column: x => x.TrainingRecordId,
-                        principalTable: "TrainingRecords",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -331,11 +325,6 @@ namespace DeepLearningServer.Migrations
                 name: "IX_TrainingAdmsProcesses_TrainingRecordId",
                 table: "TrainingAdmsProcess",
                 column: "TrainingRecordId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_TrainingRecords_AdmsProcessId",
-                table: "TrainingRecords",
-                column: "AdmsProcessId");
         }
 
         /// <inheritdoc />
@@ -363,10 +352,10 @@ namespace DeepLearningServer.Migrations
                 name: "TrainingAdmsProcess");
 
             migrationBuilder.DropTable(
-                name: "TrainingRecords");
+                name: "AdmsProcesses");
 
             migrationBuilder.DropTable(
-                name: "AdmsProcesses");
+                name: "TrainingRecords");
 
             migrationBuilder.DropTable(
                 name: "Adms");

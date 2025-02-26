@@ -5,6 +5,7 @@ using Euresys.Open_eVision;
 using Euresys.Open_eVision.EasyDeepLearning;
 using Euresys.Open_eVision.LicenseFeatures;
 using NuGet.Protocol;
+using SharpCompress.Common;
 using System.Net.Http.Headers;
 
 namespace DeepLearningServer.Classes;
@@ -24,10 +25,10 @@ public class TrainingAi
 
     //private readonly string? processId;
     public int recordId;
-    //private EClassificationDataset? testDataset;
-    //private EClassificationDataset? trainingDataset;
-    //private EClassificationDataset? tvDataset;
-    //private EClassificationDataset? validationDataset;
+    private EClassificationDataset? testDataset;
+    private EClassificationDataset? trainingDataset;
+    private EClassificationDataset? tvDataset;
+    private EClassificationDataset? validationDataset;
     private readonly string[]? categories;
 
     #region Initialize
@@ -40,10 +41,10 @@ public class TrainingAi
         this.parameterData = parameterData;
         classifier = new EClassifier();
         dataset = new EClassificationDataset();
-        //tvDataset = new EClassificationDataset();
-        //trainingDataset = new EClassificationDataset();
-        //validationDataset = new EClassificationDataset();
-        //testDataset = new EClassificationDataset();
+        tvDataset = new EClassificationDataset();
+        trainingDataset = new EClassificationDataset();
+        validationDataset = new EClassificationDataset();
+        testDataset = new EClassificationDataset();
         classifier.EnableGPU = true;
         categories = parameterData.Categories;
 
@@ -56,7 +57,7 @@ public class TrainingAi
 
     #region Load images
 
-    public int LoadImages(string processId)
+    /*public int LoadImages(string processId)
     {
         if (parameterData == null) throw new Exception("Parameter data is null");
         var imagePath = parameterData.ImageSize switch
@@ -99,7 +100,7 @@ public class TrainingAi
         {
             return dataset.NumImages;
         }
-    }
+    }*/
     public int LoadImages(string[] processNames)
     {
         if (parameterData == null) throw new Exception("Parameter data is null");
@@ -129,11 +130,11 @@ public class TrainingAi
             //Load new OK images (processed images)
             dataset.AddImages(imagePath + $@"\OK\{processName}\NEW\*.jpg", "OK");
         }
-        //var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
-        //dataset.SplitDataset(tvDataset, testDataset, firstProportion);
-        //var secondProportion = parameterData.TrainingProportion /
-        //(parameterData.TrainingProportion + parameterData.ValidationProportion);
-        //tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
+        var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
+        dataset.SplitDataset(tvDataset, testDataset, firstProportion);
+        var secondProportion = parameterData.TrainingProportion /
+        (parameterData.TrainingProportion + parameterData.ValidationProportion);
+        tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
         Console.WriteLine("Num labels: " + dataset.NumLabels);
         Console.WriteLine($"num images: {dataset.NumImages}");
         if (dataset.NumImages < 1)
@@ -207,7 +208,7 @@ public class TrainingAi
         var activeDevice = classifier.GetActiveDevice();
        
         Console.WriteLine($"active device name: {activeDevice.Name} /n type: {activeDevice.DeviceType}");
-        classifier.Train(dataset, dataAug, parameterData?.Iterations ?? 3);
+        classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
         while (true)
         {
             classifier.WaitForIterationCompletion();
@@ -337,7 +338,60 @@ public class TrainingAi
         //testDataset = null;
         dataAug = null;
     }
+    public async Task SaveModel(string localPath, string remotePath ,string clientIpAddress)
+    {
+        try
+        {
+            string? directoryPath = Path.GetDirectoryName(localPath);
+            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+            {
+                // 디렉토리 생성
+                Directory.CreateDirectory(directoryPath);
 
+            }
+
+            // 모델 저장
+            classifier?.SaveTrainingModel(localPath);
+
+            using (var client = new HttpClient())
+            {
+                using (var form = new MultipartFormDataContent())
+                {
+                    byte[] fileBytes = await File.ReadAllBytesAsync(localPath);
+                    var fileContent = new ByteArrayContent(fileBytes);
+                    fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                    string fileName = Path.GetFileName(localPath);
+                    // 🔹 파일 추가
+                    form.Add(fileContent, "File", fileName);
+
+                    // 🔹 ModelPath 추가
+                    //form.Add(new StringContent("D:/"+ Path.GetFileName(filePath)), "ModelPath");
+                    Console.WriteLine($"Remote path: {remotePath}");
+                    form.Add(new StringContent(remotePath), "ModelPath");
+                    Console.WriteLine($"form.ToString(): {form.ToString()}");
+                    Console.WriteLine("client ip address: " + clientIpAddress);
+                    // 🔹 API 엔드포인트
+                    string apiUrl = $"http://{clientIpAddress}/api/model/upload";
+
+                    // 🔹 요청 전송
+                    HttpResponseMessage response = await client.PostAsync(apiUrl, form);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine("모델 업로드 성공: " + response.Content.ReadAsStringAsync().Result);
+                    }
+                    else
+                    {
+                        Console.WriteLine("모델 업로드 실패: " + response.StatusCode);
+                    }
+                }
+            }
+        }
+        catch(Exception error)
+        {
+
+        }
+    }
     public async Task SaveModel(string filePath, string clientIpAddress, ImageSize imageSize)
     {
         try

@@ -127,7 +127,7 @@ public partial class DlServerContext : DbContext
             entity.HasIndex(e => e.AdmsProcessId, "IX_RecipeFiles_AdmsProcessId");
             entity.Property(e => e.FileName).HasMaxLength(100);
             entity.Property(e => e.LastModified).HasColumnType("datetime");
-
+            entity.Property(e => e.FileType).HasMaxLength(50);
             //entity.HasOne(d => d.Adms).WithMany(p => p.RecipeFiles).HasForeignKey(d => d.AdmsId);
 
             entity.HasOne(d => d.AdmsProcess).WithMany(p => p.RecipeFiles).HasForeignKey(d => d.AdmsProcessId);
@@ -140,7 +140,6 @@ public partial class DlServerContext : DbContext
                .WithOne(tap => tap.TrainingRecord)
                .HasForeignKey(tap => tap.TrainingRecordId);
             entity.Property(e => e.Status).HasMaxLength(50).HasConversion<string>(v => v.ToString(), v => Enum.Parse<TrainingStatus>(v));
-            //entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingRecords).HasForeignKey(d => d.AdmsProcessId);
         });
         modelBuilder.Entity<LogRecord>(entity =>
         {

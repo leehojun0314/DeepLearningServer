@@ -287,6 +287,11 @@ namespace DeepLearningServer.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("FileType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<DateTime>("LastModified")
                         .HasColumnType("datetime");
 
@@ -330,9 +335,6 @@ namespace DeepLearningServer.Migrations
 
                     b.Property<double?>("Accuracy")
                         .HasColumnType("float");
-
-                    b.Property<int?>("AdmsProcessId")
-                        .HasColumnType("int");
 
                     b.Property<int>("BatchSize")
                         .HasColumnType("int");
@@ -463,8 +465,6 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AdmsProcessId");
-
                     b.ToTable("TrainingRecords");
                 });
 
@@ -561,13 +561,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("TrainingRecord");
                 });
 
-            modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
-                {
-                    b.HasOne("DeepLearningServer.Models.AdmsProcess", null)
-                        .WithMany("TrainingRecords")
-                        .HasForeignKey("AdmsProcessId");
-                });
-
             modelBuilder.Entity("DeepLearningServer.Models.Adm", b =>
                 {
                     b.Navigation("AdmsProcesses");
@@ -582,8 +575,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("RecipeFiles");
 
                     b.Navigation("TrainingAdmsProcesses");
-
-                    b.Navigation("TrainingRecords");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Process", b =>

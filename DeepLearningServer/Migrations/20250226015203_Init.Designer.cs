@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeepLearningServer.Migrations
 {
     [DbContext(typeof(DlServerContext))]
-    [Migration("20250225034828_20250225")]
-    partial class _20250225
+    [Migration("20250226015203_Init")]
+    partial class Init
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -290,6 +290,11 @@ namespace DeepLearningServer.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("FileType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<DateTime>("LastModified")
                         .HasColumnType("datetime");
 
@@ -333,9 +338,6 @@ namespace DeepLearningServer.Migrations
 
                     b.Property<double?>("Accuracy")
                         .HasColumnType("float");
-
-                    b.Property<int>("AdmsProcessId")
-                        .HasColumnType("int");
 
                     b.Property<int>("BatchSize")
                         .HasColumnType("int");
@@ -466,8 +468,6 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_TrainingRecords_AdmsProcessId");
-
                     b.ToTable("TrainingRecords");
                 });
 
@@ -564,17 +564,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("TrainingRecord");
                 });
 
-            modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
-                {
-                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
-                        .WithMany("TrainingRecords")
-                        .HasForeignKey("AdmsProcessId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AdmsProcess");
-                });
-
             modelBuilder.Entity("DeepLearningServer.Models.Adm", b =>
                 {
                     b.Navigation("AdmsProcesses");
@@ -589,8 +578,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("RecipeFiles");
 
                     b.Navigation("TrainingAdmsProcesses");
-
-                    b.Navigation("TrainingRecords");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Process", b =>
