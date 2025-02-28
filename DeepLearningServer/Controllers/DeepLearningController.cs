@@ -125,14 +125,21 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                         _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
                         instance.SetParameters();
-                        instance.Train((isTraining, progress, bestIteration) =>
+                        if (parameterData.UsePretrainedModel)
+                        {
+                            record.HasPretrainedModel = instance.LoadPretrainedModel(_serverSettings.PretrainedModelPath, parameterData.ImageSize);
+                            _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
+                        }
+                        instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
                         {
                             _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
                             var updates = new Dictionary<string, object>
                         {
                             { "Status", TrainingStatus.Running },
                             { "Progress", progress },
-                            { "BestIteration", bestIteration }
+                            { "BestIteration", bestIteration },
+                            { "Accuracy", bestAccuracy }
+
                         };
 
                             var newEntry = new ProgressEntry
@@ -140,7 +147,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 IsTraining = isTraining,
                                 Progress = isTraining ? progress : 1,
                                 BestIteration = bestIteration,
-                                Timestamp = DateTime.Now
+                                Timestamp = DateTime.Now,
+                                Accuracy = currentAccuracy
                             };
 
                             _mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
@@ -162,15 +170,20 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 }
                                 //instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
                                 instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
+                                record.ModelName = modelName;
+                                record.ModelPath = savePath;
                             }
                         }
+                        record.Status = TrainingStatus.Completed;
+                        record.EndTime = DateTime.Now;
+                        _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
 
                         _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
-                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object>
-                    {
-                        { "Status", TrainingStatus.Completed },
-                        { "EndTime" , DateTime.Now }
-                    }).GetAwaiter().GetResult();
+                    //    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object>
+                    //{
+                    //    { "Status", TrainingStatus.Completed },
+                    //    { "EndTime" , DateTime.Now }
+                    //}).GetAwaiter().GetResult();
 
                         Dictionary<string, float> trainingResults = instance.GetTrainingResult();
                         var labelList = trainingResults.Select(kvp => new Label
@@ -189,6 +202,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                     catch (Exception e)
                     {
                         ToolStatusManager.SetProcessRunning(false);
+                        Console.WriteLine("Error: " + e);
                         _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
                         _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
                         instance.StopTraining();
@@ -209,7 +223,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         catch (Exception error)
         {
             ToolStatusManager.SetProcessRunning(false);
-            Console.WriteLine("Error: ", error.Message);
+            Console.WriteLine("Error: ", error);
+            Console.WriteLine("Error Message: ", error.Message);
             if(_recordId == 0) {
                 throw;
             }
@@ -217,7 +232,10 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             {
                 _mssqlDbService.PartialUpdateTrainingAsync(_recordId, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
                 var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
-                instance.StopTraining();
+                if(instance != null)
+                {
+                    instance.StopTraining();
+                }
                 SingletonAiDuo.Reset(parameterData.ImageSize);
                 Console.WriteLine(error.Message);
                 _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);

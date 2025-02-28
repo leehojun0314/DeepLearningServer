@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Security.Cryptography.X509Certificates;
 using DeepLearningServer.Enums;
 using Euresys.Open_eVision.EasyDeepLearning;
 
@@ -20,6 +21,8 @@ public class CreateAndRunModel
 
     [DefaultValue(0.1f)]
     public float TestProportion { get; set; } = 0.1f;
+
+    public bool UsePretrainedModel { get; set; }
 
     [DefaultValue(50)]
     public int Iterations { get; set; } = 50;

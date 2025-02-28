@@ -19,8 +19,8 @@ public partial class TrainingRecord
     public string? ModelName { get; set; } = null!;
 
     public string? ModelPath { get; set; } = null!;
-
-    public double? Accuracy { get; set; }
+    public bool HasPretrainedModel { get; set; } = false;
+    public float? Accuracy { get; set; }
 
     public double? Loss { get; set; }
 

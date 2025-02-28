@@ -12,7 +12,7 @@ namespace DeepLearningServer.Classes;
 
 public class TrainingAi
 {
-    public delegate void TrainCallback(bool isTraining, float progress, int bestIteration
+    public delegate void TrainCallback(bool isTraining, float progress, int bestIteration, float currentAccuracy, float bestAccuracy
         );
 
     private readonly ServerSettings serverSettings;
@@ -195,10 +195,43 @@ public class TrainingAi
         classifier.ComputeHeatmapWithResult = parameterData.Classifier.ComputeHeatMap;
         classifier.EnableHistogramEqualization = parameterData.Classifier.EnableHistogramEqualization;
         classifier.BatchSize = parameterData.Classifier.BatchSize;
+      
     }
 
     #endregion
-
+    public bool LoadPretrainedModel(string path, ImageSize size)
+    {
+        Console.WriteLine("Loading pretrained model...");
+        if(classifier == null)
+        {
+            throw new Exception("Classifier is null");
+        }
+        classifier.UsePretrainedModel = true;
+        switch (size)
+        {
+            case ImageSize.Middle:
+                {
+                    string combinedPath = Path.Combine(path, "EasyClassify_Normal.eclmodel");
+                    Console.WriteLine("Combined path: " + combinedPath);
+                    //classifier.UsePretrainedModel
+                    //classifier.LoadOnnxModelAsPretrained(combinedPath);
+                    break;
+                }
+            case ImageSize.Large:
+                {
+                    string combinedPath = Path.Combine(path, "EasyClassify_Large.eclmodel");
+                    Console.WriteLine("Combined path: " + combinedPath);
+                    //classifier.LoadOnnxModelAsPretrained(combinedPath);
+                    break;
+                }
+                
+            default:
+                break;
+        }
+        Console.WriteLine("Pretrained model loaded");
+        return classifier.HasPretrainedModel();
+        
+    }
     #region Train
 
     public Task Train(TrainCallback cb)
@@ -208,13 +241,22 @@ public class TrainingAi
         var activeDevice = classifier.GetActiveDevice();
        
         Console.WriteLine($"active device name: {activeDevice.Name} /n type: {activeDevice.DeviceType}");
-        classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
+        classifier.Train(dataset, dataAug, parameterData?.Iterations ?? 3);
+        int iteration = 0;
         while (true)
         {
-            classifier.WaitForIterationCompletion();
-            cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration
+            //iteration++;
+            int completion = classifier.WaitForIterationCompletion();
+            Console.WriteLine("completion: "+ completion);
+            
+            float bestAccuracy = classifier.GetTrainingMetrics(classifier.BestIteration).Accuracy;
+            Console.WriteLine("Best Accuracy: " + bestAccuracy);
+            float currentAccuracy = classifier.GetTrainingMetrics(iteration).Accuracy;
+            Console.WriteLine("Current Accuracy: "+ currentAccuracy);
+           
+            cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
                 );
-
+            iteration++;
             if (classifier.IsTraining() == false){
                 break; }
         }
@@ -286,7 +328,7 @@ public class TrainingAi
         var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
         var weightedAccuracy = metrics.GetWeightedAccuracy(dataset);
         var weightedError = metrics.GetWeightedError(dataset);
-        Console.WriteLine($"weighted accuracy: {weightedAccuracy}");
+        Console.WriteLine($"weighted currentAccuracy: {weightedAccuracy}");
         Console.WriteLine($"weighted error: {weightedError}");
         metrics.GetLabelAccuracy("BURST");
         // var okAccuracy = metrics.GetLabelAccuracy("OK");
@@ -309,8 +351,8 @@ public class TrainingAi
         foreach (string category in categories)
         {
             string upperCategory = category.ToUpper();
-            Console.WriteLine($"balanced accuracy: {metrics.BalancedAccuracy}");
-            Console.WriteLine($"label accuracy: {metrics.GetLabelAccuracy(upperCategory)}");
+            Console.WriteLine($"balanced currentAccuracy: {metrics.BalancedAccuracy}");
+            Console.WriteLine($"label currentAccuracy: {metrics.GetLabelAccuracy(upperCategory)}");
             dictionary.Add(category.ToLower() + "Accuracy", metrics.GetLabelAccuracy(upperCategory));
             dictionary.Add(category.ToLower() + "Error", metrics.GetLabelError(upperCategory));
         }

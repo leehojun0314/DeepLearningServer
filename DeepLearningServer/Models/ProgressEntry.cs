@@ -13,7 +13,7 @@ public partial class ProgressEntry
 
     public double BestIteration { get; set; }
 
-
+    public float? Accuracy { get; set; }
     public DateTime Timestamp { get; set; }
 
     public int TrainingRecordId { get; set; }

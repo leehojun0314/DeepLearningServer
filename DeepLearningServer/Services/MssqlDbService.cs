@@ -91,7 +91,12 @@ namespace DeepLearningServer.Services
 
             return result;
         }
-
+        public async Task UpdateTrainingAsync(TrainingRecord trainingRecord)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            context.TrainingRecords.Update(trainingRecord);
+            await context.SaveChangesAsync();
+        }
         public async Task InsertTrainingAsync(TrainingRecord trainingRecord)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
