@@ -120,15 +120,19 @@ public class TrainingAi
                 Console.WriteLine("upper category: " + upperCategory);
                 dataset.AddImages(imagePath + $@"\NG\BASE\{upperCategory}\*.jpg", upperCategory);
                 // dataset.AddImages("D:\\Images\\DL_SERVER TEST\\20250107\\02_8AE05B-L-0\\J96972.1\\*.jpg", upperCategory);
-                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg");
+                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg"); 
             }
         }
         //Load base OK images (processed images)
         foreach (var processName in processNames)
         {
-            dataset.AddImages(imagePath + $@"\OK\{processName}\BASE\*.jpg", "OK");
+            string basePath = imagePath + $@"\OK\{processName}\BASE\*.jpg";
+            string newPath= imagePath + $@"\OK\{processName}\NEW\*.jpg";
+            Console.WriteLine($"Base path: {basePath}");
+            Console.WriteLine($"New path: {newPath}");  
+            dataset.AddImages(basePath, "OK");
             //Load new OK images (processed images)
-            dataset.AddImages(imagePath + $@"\OK\{processName}\NEW\*.jpg", "OK");
+            dataset.AddImages(newPath, "OK");
         }
         var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
         dataset.SplitDataset(tvDataset, testDataset, firstProportion);
@@ -141,10 +145,23 @@ public class TrainingAi
         {
             throw new Exception("Error on loading images. Images not found");
         }
-        else
+        uint[] results = dataset.GetImagesIndexesWithLabel("OK");
+        foreach(var result in results)
         {
-            return dataset.NumImages;
+            Console.WriteLine($"Result: {result}");
         }
+        //int numOkImages = dataset.GetNumImagesWithObjectLabel("OK");
+        //Console.WriteLine("Num Ok images: " + numOkImages);
+        //if (numOkImages == 0)
+        //{
+        //    Console.WriteLine("Error on loading ok images");
+        //    throw new Exception("Ok images not found. Check processe name.");
+        //}
+        //else
+        //{
+        //    return dataset.NumImages;
+        //}
+        return dataset.NumImages;
     }
     #endregion
 
@@ -278,44 +295,7 @@ public class TrainingAi
             throw new Exception("No classifier was trained");
         }
     }
-
-
-    public Dictionary<string, float> GetStatus()
-    {
-        if (classifier != null)
-        {
-            var learningRateParameters = classifier.LearningRateParameters;
-            Console.WriteLine($"Learning rate: {learningRateParameters}");
-            Console.WriteLine($"LearningRateParameters Length: {learningRateParameters.Length}");
-
-            Dictionary<string, float> dictionary = new Dictionary<string, float>();
-            dictionary.Add("isTraining", classifier.IsTraining() ? 1 : 0);
-            dictionary.Add("bestIteration", classifier.BestIteration);
-            dictionary.Add("currentTrainingProgression", classifier.CurrentTrainingProgression);
-            dictionary.Add("currentTrainingNumIterations", classifier.CurrentTrainingNumIterations);
-            Dictionary<string, float> resultDictionary = GetTrainingResult();
-
-            // 배열 길이 확인
-            for (var i = 0; i < learningRateParameters.Length; i++)
-            {
-                Console.WriteLine($"Learning rate parameter {i}: {learningRateParameters[i]}");
-                dictionary.Add($"learningRateParameters{i}", learningRateParameters[i]);
-            }
-            foreach (var kvp in resultDictionary)
-            {
-                if (dictionary.ContainsKey(kvp.Key))
-                    dictionary[kvp.Key] += kvp.Value; // 기존 값에 더하기
-                else
-                    dictionary[kvp.Key] = kvp.Value;  // 새로운 키 추가
-            }
-
-            return dictionary;
-        }
-        else
-        {
-            throw new Exception("No classifier was trained");
-        }
-    }
+  
     public bool IsTraining()
     {
         return classifier?.IsTraining() ?? false;

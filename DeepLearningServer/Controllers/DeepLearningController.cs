@@ -98,6 +98,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                     Console.WriteLine($"Process {processName} is not valid.");
                     return BadRequest("Default process name should not be included.");
                 }
+                Console.WriteLine("Foud process name: " + processName);
                 processNames.Add(processName);
 
                 Adm adms = await _mssqlDbService.GetAdmsById(info["admsId"]);
@@ -272,23 +273,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         }
     }
     
-    [HttpGet("status/{imageSize}")]
-    public async Task<IActionResult> GetStatus([FromRoute] ImageSize imageSize)
-    {
-        await _mssqlDbService.InsertLogAsync("Get status called", LogLevel.Information);
-        var instance = SingletonAiDuo.GetInstance(imageSize);
-        if (instance == null)
-        {
-            await _mssqlDbService.InsertLogAsync("GetStatus error: Instance is null.", LogLevel.Error);
-            return BadRequest(new NewRecord("Instance is null."));
-        }
-
-        Dictionary<string, float> status = instance.GetStatus();
-        await _mssqlDbService.InsertLogAsync("status retrieved", LogLevel.Debug);
-        Console.WriteLine(status);
-
-        return Ok(status);
-    }
 
     [HttpGet("result/{imageSize}")]
     public IActionResult GetTrainingResult([FromRoute] ImageSize imageSize)

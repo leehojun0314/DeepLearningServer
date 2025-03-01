@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Remove="appsettings.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AutoMapper" Version="13.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.1">
@@ -33,6 +37,10 @@
     <Reference Include="Open_eVision_NetApi_23_08">
       <HintPath>C:\Program Files\Euresys\Open eVision 23.08\Bin\Open_eVision_NetApi_23_08.dll</HintPath>
     </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <TypeScriptCompile Include="appsettings.json" />
   </ItemGroup>
 
 </Project>
