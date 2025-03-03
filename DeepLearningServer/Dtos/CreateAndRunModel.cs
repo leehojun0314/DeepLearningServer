@@ -11,8 +11,8 @@ public class CreateAndRunModel
     public required ImageSize ImageSize { get; set; }
     public string[] Categories { get; set; }
     public bool IsDefaultModel { get; set; }
-    [DefaultValue("Middle/  ")]
-    public string ClientModelDestination { get; set; } = "Middle/";
+    [DefaultValue("Middle")]
+    public string ClientModelDestination { get; set; } = "Middle";
     [DefaultValue(0.7f)]
     public float TrainingProportion { get; set; } = 0.7f;
 

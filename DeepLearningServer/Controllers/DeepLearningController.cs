@@ -39,12 +39,12 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             ToolStatusManager.SetProcessRunning(true);
 
             // 🔹 학습 중인지 확인
-            bool isRunning = await _mssqlDbService.CheckIsTraining();
-            if (isRunning)
-            {
-                ToolStatusManager.SetProcessRunning(false);
-                return BadRequest("The tool is already running.");
-            }
+            //bool isRunning = await _mssqlDbService.CheckIsTraining();
+            //if (isRunning)
+            //{
+            //    ToolStatusManager.SetProcessRunning(false);
+            //    return BadRequest("The tool is already running.");
+            //}
 
             await _mssqlDbService.InsertLogAsync("Create tool and run called", LogLevel.Information);
             Console.WriteLine($"AdmsProcessIds: {string.Join("," , parameterData.AdmsProcessIds)}");
@@ -134,14 +134,14 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
                         {
                             _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
-                            var updates = new Dictionary<string, object>
-                        {
-                            { "Status", TrainingStatus.Running },
-                            { "Progress", progress },
-                            { "BestIteration", bestIteration },
-                            { "Accuracy", bestAccuracy }
+                        //    var updates = new Dictionary<string, object>
+                        //{
+                        //    { "Status", TrainingStatus.Running },
+                        //    { "Progress", progress },
+                        //    { "BestIteration", bestIteration },
+                        //    { "Accuracy", bestAccuracy }
 
-                        };
+                        //};
 
                             var newEntry = new ProgressEntry
                             {
@@ -151,8 +151,15 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 Timestamp = DateTime.Now,
                                 Accuracy = currentAccuracy
                             };
+                            record.Status = TrainingStatus.Running;
+                            record.Progress = progress;
+                            record.BestIteration = bestIteration;
+                            record.Accuracy = bestAccuracy;
+                            record.Loss = 1 - bestAccuracy;
+                            _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
 
-                            _mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
+                            //_mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
+
                             _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
                         }).GetAwaiter().GetResult();
 
@@ -177,6 +184,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         }
                         record.Status = TrainingStatus.Completed;
                         record.EndTime = DateTime.Now;
+                        record.Progress = 1;
                         _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
 
                         _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
@@ -187,6 +195,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                     //}).GetAwaiter().GetResult();
 
                         Dictionary<string, float> trainingResults = instance.GetTrainingResult();
+
                         var labelList = trainingResults.Select(kvp => new Label
                         {
                             Name = kvp.Key,

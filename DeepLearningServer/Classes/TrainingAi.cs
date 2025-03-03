@@ -35,7 +35,7 @@ public class TrainingAi
     public TrainingAi(CreateAndRunModel parameterData, ServerSettings serverSettings)
     {
 
-       
+
 
         this.serverSettings = serverSettings;
         this.parameterData = parameterData;
@@ -120,16 +120,16 @@ public class TrainingAi
                 Console.WriteLine("upper category: " + upperCategory);
                 dataset.AddImages(imagePath + $@"\NG\BASE\{upperCategory}\*.jpg", upperCategory);
                 // dataset.AddImages("D:\\Images\\DL_SERVER TEST\\20250107\\02_8AE05B-L-0\\J96972.1\\*.jpg", upperCategory);
-                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg"); 
+                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg");
             }
         }
         //Load base OK images (processed images)
         foreach (var processName in processNames)
         {
             string basePath = imagePath + $@"\OK\{processName}\BASE\*.jpg";
-            string newPath= imagePath + $@"\OK\{processName}\NEW\*.jpg";
+            string newPath = imagePath + $@"\OK\{processName}\NEW\*.jpg";
             Console.WriteLine($"Base path: {basePath}");
-            Console.WriteLine($"New path: {newPath}");  
+            Console.WriteLine($"New path: {newPath}");
             dataset.AddImages(basePath, "OK");
             //Load new OK images (processed images)
             dataset.AddImages(newPath, "OK");
@@ -146,7 +146,7 @@ public class TrainingAi
             throw new Exception("Error on loading images. Images not found");
         }
         uint[] results = dataset.GetImagesIndexesWithLabel("OK");
-        foreach(var result in results)
+        foreach (var result in results)
         {
             Console.WriteLine($"Result: {result}");
         }
@@ -165,7 +165,7 @@ public class TrainingAi
     }
     #endregion
 
-        #region Set parameters
+    #region Set parameters
 
     public void SetParameters()
     {
@@ -212,14 +212,14 @@ public class TrainingAi
         classifier.ComputeHeatmapWithResult = parameterData.Classifier.ComputeHeatMap;
         classifier.EnableHistogramEqualization = parameterData.Classifier.EnableHistogramEqualization;
         classifier.BatchSize = parameterData.Classifier.BatchSize;
-      
+
     }
 
     #endregion
     public bool LoadPretrainedModel(string path, ImageSize size)
     {
         Console.WriteLine("Loading pretrained model...");
-        if(classifier == null)
+        if (classifier == null)
         {
             throw new Exception("Classifier is null");
         }
@@ -241,13 +241,13 @@ public class TrainingAi
                     //classifier.LoadOnnxModelAsPretrained(combinedPath);
                     break;
                 }
-                
+
             default:
                 break;
         }
         Console.WriteLine("Pretrained model loaded");
         return classifier.HasPretrainedModel();
-        
+
     }
     #region Train
 
@@ -256,7 +256,7 @@ public class TrainingAi
         if (classifier == null) throw new Exception("Classifier is null");
         Console.WriteLine("Started training");
         var activeDevice = classifier.GetActiveDevice();
-       
+
         Console.WriteLine($"active device name: {activeDevice.Name} /n type: {activeDevice.DeviceType}");
         classifier.Train(dataset, dataAug, parameterData?.Iterations ?? 3);
         int iteration = 0;
@@ -264,18 +264,20 @@ public class TrainingAi
         {
             //iteration++;
             int completion = classifier.WaitForIterationCompletion();
-            Console.WriteLine("completion: "+ completion);
-            
+            Console.WriteLine("completion: " + completion);
+
             float bestAccuracy = classifier.GetTrainingMetrics(classifier.BestIteration).Accuracy;
             Console.WriteLine("Best Accuracy: " + bestAccuracy);
             float currentAccuracy = classifier.GetTrainingMetrics(iteration).Accuracy;
-            Console.WriteLine("Current Accuracy: "+ currentAccuracy);
-           
+            Console.WriteLine("Current Accuracy: " + currentAccuracy);
+
             cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
                 );
             iteration++;
-            if (classifier.IsTraining() == false){
-                break; }
+            if (classifier.IsTraining() == false)
+            {
+                break;
+            }
         }
         // classifier.WaitForTrainingCompletion();
 
@@ -295,11 +297,18 @@ public class TrainingAi
             throw new Exception("No classifier was trained");
         }
     }
-  
+
     public bool IsTraining()
     {
         return classifier?.IsTraining() ?? false;
     }
+    //public float GetAccuracy()
+    //{
+    //    if (classifier == null) throw new Exception("The classifier is null");
+    //    var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
+        
+    //    return metrics.Accuracy;
+    //}
     public Dictionary<string, float> GetTrainingResult()
     {
         Console.WriteLine("Get training result called");
@@ -360,7 +369,7 @@ public class TrainingAi
         //testDataset = null;
         dataAug = null;
     }
-    public async Task SaveModel(string localPath, string remotePath ,string clientIpAddress)
+    public async Task SaveModel(string localPath, string remotePath, string clientIpAddress)
     {
         try
         {
@@ -409,7 +418,7 @@ public class TrainingAi
                 }
             }
         }
-        catch(Exception error)
+        catch (Exception error)
         {
 
         }
