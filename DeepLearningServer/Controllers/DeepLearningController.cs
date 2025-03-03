@@ -170,7 +170,28 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             foreach (var processName in processNames)
                             {
                                 string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
-                                string modelName = $"{processName}.edltool";
+                                string modelName;
+                                if (parameterData.IsDefaultModel)
+                                {
+                                    if(parameterData.ImageSize == ImageSize.Middle)
+                                    {
+                                        modelName = "Default_Middle.edltool";
+                                    }
+                                    else if(parameterData.ImageSize == ImageSize.Large)
+                                    {
+                                        modelName = "Default_Large.edltool";
+                                    }
+                                    else
+                                    {
+                                        //modelName = "Default_Large.edltool";
+                                        throw new Exception("Invalid image size. Only Middle or Large is supported");
+                                    }
+                                }
+                                else
+                                {
+                                    modelName = $"{processName}.edltool";
+
+                                }
 
                                 if (!Directory.Exists(savePath))
                                 {
