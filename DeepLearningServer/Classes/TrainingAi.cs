@@ -48,8 +48,6 @@ public class TrainingAi
         classifier.EnableGPU = true;
         categories = parameterData.Categories;
 
-        //processId = parameterData.ProcessId;
-        Console.WriteLine($"Number of GPUs: {classifier.NumGPUs}");
     }
 
     #endregion
@@ -145,22 +143,6 @@ public class TrainingAi
         {
             throw new Exception("Error on loading images. Images not found");
         }
-        uint[] results = dataset.GetImagesIndexesWithLabel("OK");
-        foreach (var result in results)
-        {
-            Console.WriteLine($"Result: {result}");
-        }
-        //int numOkImages = dataset.GetNumImagesWithObjectLabel("OK");
-        //Console.WriteLine("Num Ok images: " + numOkImages);
-        //if (numOkImages == 0)
-        //{
-        //    Console.WriteLine("Error on loading ok images");
-        //    throw new Exception("Ok images not found. Check processe name.");
-        //}
-        //else
-        //{
-        //    return dataset.NumImages;
-        //}
         return dataset.NumImages;
     }
     #endregion
@@ -218,33 +200,11 @@ public class TrainingAi
     #endregion
     public bool LoadPretrainedModel(string path, ImageSize size)
     {
-        Console.WriteLine("Loading pretrained model...");
         if (classifier == null)
         {
             throw new Exception("Classifier is null");
         }
         classifier.UsePretrainedModel = true;
-        switch (size)
-        {
-            case ImageSize.Middle:
-                {
-                    string combinedPath = Path.Combine(path, "EasyClassify_Normal.eclmodel");
-                    Console.WriteLine("Combined path: " + combinedPath);
-                    //classifier.UsePretrainedModel
-                    //classifier.LoadOnnxModelAsPretrained(combinedPath);
-                    break;
-                }
-            case ImageSize.Large:
-                {
-                    string combinedPath = Path.Combine(path, "EasyClassify_Large.eclmodel");
-                    Console.WriteLine("Combined path: " + combinedPath);
-                    //classifier.LoadOnnxModelAsPretrained(combinedPath);
-                    break;
-                }
-
-            default:
-                break;
-        }
         Console.WriteLine("Pretrained model loaded");
         return classifier.HasPretrainedModel();
 
@@ -258,7 +218,14 @@ public class TrainingAi
         var activeDevice = classifier.GetActiveDevice();
 
         Console.WriteLine($"active device name: {activeDevice.Name} /n type: {activeDevice.DeviceType}");
-        classifier.Train(dataset, dataAug, parameterData?.Iterations ?? 3);
+        if (parameterData.TrainingProportion == 1)
+        {
+            classifier.Train(dataset, dataAug, parameterData?.Iterations ?? 3);
+        }
+        else
+        {
+            classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
+        }
         int iteration = 0;
         while (true)
         {

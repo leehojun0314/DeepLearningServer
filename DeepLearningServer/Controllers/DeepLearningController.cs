@@ -129,6 +129,10 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         if (parameterData.UsePretrainedModel)
                         {
                             record.HasPretrainedModel = instance.LoadPretrainedModel(_serverSettings.PretrainedModelPath, parameterData.ImageSize);
+                            if (!record.HasPretrainedModel)
+                            {
+                                throw new Exception("Failed to use pretrained model");
+                            }
                             _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
                         }
                         instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>

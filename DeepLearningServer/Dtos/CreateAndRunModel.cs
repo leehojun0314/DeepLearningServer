@@ -13,14 +13,14 @@ public class CreateAndRunModel
     public bool IsDefaultModel { get; set; }
     [DefaultValue("Middle")]
     public string ClientModelDestination { get; set; } = "Middle";
-    [DefaultValue(0.7f)]
-    public float TrainingProportion { get; set; } = 0.7f;
+    [DefaultValue(1f)]
+    public float TrainingProportion { get; set; } = 0f;
 
-    [DefaultValue(0.2f)]
-    public float ValidationProportion { get; set; } = 0.2f;
+    [DefaultValue(0f)]
+    public float ValidationProportion { get; set; } = 0f;
 
-    [DefaultValue(0.1f)]
-    public float TestProportion { get; set; } = 0.1f;
+    [DefaultValue(0f)]
+    public float TestProportion { get; set; } = 0f;
 
     public bool UsePretrainedModel { get; set; }
 
