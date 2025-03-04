@@ -11,5 +11,7 @@
 
         // 🔥 FK 관계
         public virtual AdmsProcess AdmsProcess { get; set; } = null!;
+        public virtual ICollection<ModelRecord> ModelRecords { get; set; } = new List<ModelRecord>();
+
     }
 }

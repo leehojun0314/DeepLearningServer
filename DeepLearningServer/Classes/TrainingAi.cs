@@ -387,81 +387,17 @@ public class TrainingAi
         }
         catch (Exception error)
         {
-
+            Console.WriteLine($"모델 저장 중 오류 발생: {error.Message} {error.ToString()}");
+            throw new Exception($"모델 저장 중 오류 발생: {error.ToString()}");
         }
     }
-    public async Task SaveModel(string filePath, string clientIpAddress, ImageSize imageSize)
-    {
-        try
-        {
-            // 디렉토리 경로 추출
-            string? directoryPath = Path.GetDirectoryName(filePath);
-
-            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
-            {
-                // 디렉토리 생성
-                Directory.CreateDirectory(directoryPath);
-
-            }
-
-            // 모델 저장
-            classifier?.SaveTrainingModel(filePath);
-            Console.WriteLine("file path: " + filePath);
-            using (var client = new HttpClient())
-            {
-                using (var form = new MultipartFormDataContent())
-                {
-                    byte[] fileBytes = await File.ReadAllBytesAsync(filePath);
-                    var fileContent = new ByteArrayContent(fileBytes);
-                    fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
-
-                    // 🔹 파일 추가
-                    form.Add(fileContent, "File", Path.GetFileName(filePath));
-
-                    // 🔹 ModelPath 추가
-                    //form.Add(new StringContent("D:/"+ Path.GetFileName(filePath)), "ModelPath");
-                    form.Add(new StringContent(Path.GetFileName(filePath)), "ModelPath");
-                    form.Add(new StringContent(imageSize.ToString()), "ImageSize");
-                    Console.WriteLine($"form.ToString(): {form.ToString()}");
-                    Console.WriteLine("client ip address: " + clientIpAddress);
-                    // 🔹 API 엔드포인트
-                    string apiUrl = $"http://{clientIpAddress}/api/model/upload";
-
-                    // 🔹 요청 전송
-                    HttpResponseMessage response = await client.PostAsync(apiUrl, form);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        Console.WriteLine("모델 업로드 성공: " + response.Content.ReadAsStringAsync().Result);
-                    }
-                    else
-                    {
-                        Console.WriteLine("모델 업로드 실패: " + response.StatusCode);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"모델 저장 중 오류 발생: {ex.Message} {ex.ToString()}");
-            throw new Exception($"모델 저장 중 오류 발생: {ex.ToString()}");
-        }
-    }
-
-    //public void SaveSettings(string filePath)
-    //{
-    //    classifier?.SaveSettings(filePath);
-    //}
+  
+   
 
     public void LoadModel(string filePath)
     {
         classifier?.LoadTrainingModel(filePath);
     }
-
-    //public void LoadSettings(string filePath)
-    //{
-    //    classifier?.LoadSettings(filePath);
-    //}
 
     ~TrainingAi()
     {

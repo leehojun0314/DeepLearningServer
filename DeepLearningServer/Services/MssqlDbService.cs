@@ -37,6 +37,13 @@ namespace DeepLearningServer.Services
             context.LogRecords.Add(logRecord);
             await context.SaveChangesAsync();
         }
+        public async Task<AdmsProcess> GetAdmsProcess(int admsId, int processId)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            var admsProcess = await context.AdmsProcesses
+                .FirstOrDefaultAsync(ap => ap.AdmsId == admsId && ap.ProcessId == processId);
+            return admsProcess == null ? throw new NullReferenceException("AdmsProcess not found") : admsProcess;
+        }
         public async Task<string> GetProcessNameById(int processId)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
@@ -64,6 +71,12 @@ namespace DeepLearningServer.Services
             dictionary.Add("admsId", admsProcess.AdmsId);
             dictionary.Add("processId", admsProcess.ProcessId);
             return dictionary;
+        }
+        public async Task InsertModelRecordAsync(ModelRecord modelRecord)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            context.ModelRecords.Add(modelRecord);
+            await context.SaveChangesAsync();
         }
         public async Task<List<Dictionary<string, int>>> GetAdmsProcessInfos(List<int> admsProcessIds)
         {
@@ -108,6 +121,14 @@ namespace DeepLearningServer.Services
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
             context.TrainingAdmsProcess.AddRange(trainingAdmsProcess);
             await context.SaveChangesAsync();
+        }
+        public async Task<AdmsProcessType> GetAdmsProcessType(int admsProcessId)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            var admsProcessType = await context.AdmsProcessTypes.FindAsync(admsProcessId);
+            if (admsProcessType == null)
+                throw new NullReferenceException("AdmsProcessType not found");
+            return admsProcessType;
         }
         public async Task PartialUpdateTrainingAsync(int id, Dictionary<string, object> updates)
         {

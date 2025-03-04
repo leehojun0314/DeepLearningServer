@@ -20,7 +20,8 @@ public partial class DlServerContext : DbContext
     public virtual DbSet<Adm> Adms { get; set; }
 
     public virtual DbSet<AdmsProcess> AdmsProcesses { get; set; }
-
+    public virtual DbSet<AdmsProcessType> AdmsProcessTypes { get; set; }
+    public virtual DbSet<ModelRecord> ModelRecords { get; set; }
     public virtual DbSet<ImageFile> ImageFiles { get; set; }
 
     public virtual DbSet<Label> Labels { get; set; }
@@ -152,6 +153,30 @@ public partial class DlServerContext : DbContext
             entity.HasIndex(e => e.TrainingRecordId, "IX_TrainingAdmsProcesses_TrainingRecordId");
             entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingAdmsProcesses).HasForeignKey(d => d.AdmsProcessId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(d => d.TrainingRecord).WithMany(p => p.TrainingAdmsProcesses).HasForeignKey(d => d.TrainingRecordId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<ModelRecord>(entity =>
+        {
+            entity.HasIndex(e => e.AdmsProcessTypeId, "IX_ModelRecords_AdmsProcessTypeId");
+            entity.HasIndex(e => e.TrainingRecordId, "IX_ModelRecords_TrainingRecordId");
+
+            entity.Property(e => e.ModelName).HasMaxLength(255);
+            entity.Property(e => e.Status).HasMaxLength(50);
+            entity.Property(e => e.ClientPath).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.ServerPath).HasMaxLength(500).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+            entity.Property(e => e.UpdatedAt).HasColumnType("datetime");
+
+            // 🔹 AdmsProcessType 연결 (라지/미들 구분)
+            entity.HasOne(d => d.AdmsProcessType)
+                  .WithMany(p => p.ModelRecords)
+                  .HasForeignKey(d => d.AdmsProcessTypeId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // 🔹 TrainingRecord 연결 (훈련 기록 참조)
+            entity.HasOne(d => d.TrainingRecord)
+                  .WithMany(p => p.ModelRecords)
+                  .HasForeignKey(d => d.TrainingRecordId)
+                  .OnDelete(DeleteBehavior.SetNull); // 훈련 기록 삭제 시 모델 유지
         });
         OnModelCreatingPartial(modelBuilder);
     }

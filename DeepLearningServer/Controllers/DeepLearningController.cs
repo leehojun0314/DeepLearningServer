@@ -108,7 +108,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             // ✅ 모델 트레이닝 실행
             _ = Task.Run(async () =>
             {
-                await RunOnStaThread(() =>
+                await RunOnStaThread(async () =>
                 {
                     try
                     {
@@ -203,8 +203,27 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 }
                                 //instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
                                 instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
-                                record.ModelName = modelName;
-                                record.ModelPath = savePath;
+                                //var admsProcess = await _mssqlDbService.GetAdmsProcess(adms.Id, processName);
+                                //var admsProcessTypeId = await _mssqlDbService.GetAdmsProcessType(admsProcessId);
+                                var admsProcess = admsProcessInfoList.Find(admsProcessInfo => admsProcessInfo["admsId"] == adms.Id && admsProcessInfo["processName"].Equals(processName));
+                                if (admsProcess != null) { 
+                                    throw new Exception(modelName + " is not found in the admsProcessInfoList");
+                                }
+                                admsProcess.TryGetValue("admsProcessId", out int admsProcessId);
+                                var admsProcessType = await _mssqlDbService.GetAdmsProcessType(admsProcessId);
+                                var modelRecord = new ModelRecord
+                                {
+                                    ModelName = modelName,
+                                    AdmsProcessTypeId = admsProcessType.Id,
+                                    TrainingRecordId = record.Id,
+                                    Status = "saved",
+                                    ServerPath = savePath + modelName,
+                                    ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
+                                    CreatedAt = DateTime.Now
+                                };
+                                await _mssqlDbService.InsertModelRecordAsync(modelRecord);
+                                //record.ModelName = modelName;
+                                //record.ModelPath = savePath;
                             }
                         }
                         record.Status = TrainingStatus.Completed;

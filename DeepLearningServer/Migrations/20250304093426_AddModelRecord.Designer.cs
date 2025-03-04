@@ -4,6 +4,7 @@ using DeepLearningServer.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeepLearningServer.Migrations
 {
     [DbContext(typeof(DlServerContext))]
-    partial class DlServerContextModelSnapshot : ModelSnapshot
+    [Migration("20250304093426_AddModelRecord")]
+    partial class AddModelRecord
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -117,7 +120,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "AdmsProcessId" }, "IX_AdmsProcessTypes_AdmsProcessId");
 
-                    b.ToTable("AdmsProcessTypes");
+                    b.ToTable("AdmsProcessType");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
@@ -245,9 +248,6 @@ namespace DeepLearningServer.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<int?>("TrainingRecordId")
-                        .HasColumnType("int");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime");
 
@@ -255,9 +255,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "AdmsProcessTypeId" }, "IX_ModelRecords_AdmsProcessTypeId");
 
-                    b.HasIndex(new[] { "TrainingRecordId" }, "IX_ModelRecords_TrainingRecordId");
-
-                    b.ToTable("ModelRecords");
+                    b.ToTable("ModelRecord");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Process", b =>
@@ -494,6 +492,12 @@ namespace DeepLearningServer.Migrations
                     b.Property<float>("MinSpeckleDeviation")
                         .HasColumnType("real");
 
+                    b.Property<string>("ModelName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ModelPath")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<float?>("Progress")
                         .HasColumnType("real");
 
@@ -575,14 +579,7 @@ namespace DeepLearningServer.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("DeepLearningServer.Models.TrainingRecord", "TrainingRecord")
-                        .WithMany("ModelRecords")
-                        .HasForeignKey("TrainingRecordId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("AdmsProcessType");
-
-                    b.Navigation("TrainingRecord");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ProgressEntry", b =>
@@ -655,8 +652,6 @@ namespace DeepLearningServer.Migrations
             modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
                 {
                     b.Navigation("Labels");
-
-                    b.Navigation("ModelRecords");
 
                     b.Navigation("ProgressEntries");
 

@@ -16,9 +16,9 @@ public partial class TrainingRecord
 
     public DateTime? EndTime { get; set; }
 
-    public string? ModelName { get; set; } = null!;
+    //public string? ModelName { get; set; } = null!;
 
-    public string? ModelPath { get; set; } = null!;
+    //public string? ModelPath { get; set; } = null!;
     public bool HasPretrainedModel { get; set; } = false;
     public float? Accuracy { get; set; }
 
@@ -98,5 +98,6 @@ public partial class TrainingRecord
 
     public virtual ICollection<ProgressEntry> ProgressEntries { get; set; } = new List<ProgressEntry>();
     public virtual ICollection<TrainingAdmsProcess> TrainingAdmsProcesses { get; set; } = new List<TrainingAdmsProcess>();
+    public virtual ICollection<ModelRecord> ModelRecords { get; set; } = new List<ModelRecord>();
 
 }
