@@ -78,7 +78,7 @@ namespace DeepLearningServer.Services
             context.ModelRecords.Add(modelRecord);
             await context.SaveChangesAsync();
         }
-        public async Task<List<Dictionary<string, int>>> GetAdmsProcessInfos(List<int> admsProcessIds)
+        public async Task<List<Dictionary<string, object>>> GetAdmsProcessInfos(List<int> admsProcessIds)
         {
             Console.WriteLine("Adms process ids: " + string.Join(", ", admsProcessIds));
 
@@ -91,14 +91,17 @@ namespace DeepLearningServer.Services
             if (!admsProcesses.Any())
                 throw new NullReferenceException("No AdmsProcess found");
             Console.WriteLine($"Found AdmsProcesses: {string.Join(",", admsProcesses.ToArray().Select(el => el.Id))}");
-            List<Dictionary<string, int>> result = new List<Dictionary<string, int>>();
+            List<Dictionary<string, object>> result = new List<Dictionary<string, object>>();
 
             foreach (var admsProcess in admsProcesses)
             {
-                result.Add(new Dictionary<string, int>
+                var processName = await GetProcessNameById(admsProcess.ProcessId);
+                result.Add(new Dictionary<string, object>
                 {
                     { "admsId", admsProcess.AdmsId },
-                    { "processId", admsProcess.ProcessId }
+                    { "processId", admsProcess.ProcessId },
+                    {"processName" ,  processName},
+                    {"admsProcessId", admsProcess.Id }
                 });
             }
 

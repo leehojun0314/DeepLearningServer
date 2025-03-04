@@ -84,7 +84,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             await _mssqlDbService.InsertLogAsync("Initialized instance", LogLevel.Debug);
 
             // ✅ AdmsProcessIds에 해당하는 정보 가져오기
-            List<Dictionary<string, int>> admsProcessInfoList = await _mssqlDbService.GetAdmsProcessInfos(parameterData.AdmsProcessIds);
+            List<Dictionary<string, object>> admsProcessInfoList = await _mssqlDbService.GetAdmsProcessInfos(parameterData.AdmsProcessIds);
 
             // ✅ processName 및 adms 조회
             var processNames = new List<string>();
@@ -92,7 +92,11 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
            
             foreach (var info in admsProcessInfoList)
             {
-                string processName = await _mssqlDbService.GetProcessNameById(info["processId"]);
+                string processName = "";
+                if (info.TryGetValue("processId", out object value) && value is int intValue)
+                {
+                    processName = await _mssqlDbService.GetProcessNameById(intValue);
+                }
                 if (processName.Contains("Default"))
                 {
                     Console.WriteLine($"Process {processName} is not valid.");
@@ -100,9 +104,12 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 }
                 Console.WriteLine("Foud process name: " + processName);
                 processNames.Add(processName);
-
-                Adm adms = await _mssqlDbService.GetAdmsById(info["admsId"]);
-                admsList.Add(adms);
+                Adm adms;
+                if(info.TryGetValue("admsId", out object admsIdValue) && admsIdValue is int admsIdIntValue)
+                {
+                    adms = await _mssqlDbService.GetAdmsById(admsIdIntValue);
+                    admsList.Add(adms);
+                }
             }
 
             // ✅ 모델 트레이닝 실행
@@ -205,23 +212,27 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
                                 //var admsProcess = await _mssqlDbService.GetAdmsProcess(adms.Id, processName);
                                 //var admsProcessTypeId = await _mssqlDbService.GetAdmsProcessType(admsProcessId);
-                                var admsProcess = admsProcessInfoList.Find(admsProcessInfo => admsProcessInfo["admsId"] == adms.Id && admsProcessInfo["processName"].Equals(processName));
-                                if (admsProcess != null) { 
+                                var admsProcess = admsProcessInfoList.Find(admsProcessInfo => admsProcessInfo["admsId"].Equals(adms.Id) && admsProcessInfo["processName"].Equals(processName));
+                                if (admsProcess == null) { 
                                     throw new Exception(modelName + " is not found in the admsProcessInfoList");
                                 }
-                                admsProcess.TryGetValue("admsProcessId", out int admsProcessId);
-                                var admsProcessType = await _mssqlDbService.GetAdmsProcessType(admsProcessId);
-                                var modelRecord = new ModelRecord
+                                AdmsProcessType admsProcessType;
+                                if(admsProcess.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
                                 {
-                                    ModelName = modelName,
-                                    AdmsProcessTypeId = admsProcessType.Id,
-                                    TrainingRecordId = record.Id,
-                                    Status = "saved",
-                                    ServerPath = savePath + modelName,
-                                    ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
-                                    CreatedAt = DateTime.Now
-                                };
-                                await _mssqlDbService.InsertModelRecordAsync(modelRecord);
+                                    admsProcessType = await _mssqlDbService.GetAdmsProcessType(intAdmsProcessId);
+                                    var modelRecord = new ModelRecord
+                                    {
+                                        ModelName = modelName,
+                                        AdmsProcessTypeId = admsProcessType.Id,
+                                        TrainingRecordId = record.Id,
+                                        Status = "saved",
+                                        ServerPath = savePath + modelName,
+                                        ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
+                                        CreatedAt = DateTime.Now
+                                    };
+                                    await _mssqlDbService.InsertModelRecordAsync(modelRecord);
+                                }
+                                
                                 //record.ModelName = modelName;
                                 //record.ModelPath = savePath;
                             }
