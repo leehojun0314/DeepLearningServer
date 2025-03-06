@@ -336,7 +336,7 @@ public class TrainingAi
         //testDataset = null;
         dataAug = null;
     }
-    public async Task SaveModel(string localPath, string remotePath, string clientIpAddress)
+    public async Task<bool> SaveModel(string localPath, string remotePath, string clientIpAddress)
     {
         try
         {
@@ -377,10 +377,12 @@ public class TrainingAi
                     if (response.IsSuccessStatusCode)
                     {
                         Console.WriteLine("모델 업로드 성공: " + response.Content.ReadAsStringAsync().Result);
+                        return true;
                     }
                     else
                     {
                         Console.WriteLine("모델 업로드 실패: " + response.StatusCode);
+                        return false;
                     }
                 }
             }
@@ -388,7 +390,8 @@ public class TrainingAi
         catch (Exception error)
         {
             Console.WriteLine($"모델 저장 중 오류 발생: {error.Message} {error.ToString()}");
-            throw new Exception($"모델 저장 중 오류 발생: {error.ToString()}");
+            return false;
+            //throw new Exception($"모델 저장 중 오류 발생: {error.ToString()}");
         }
     }
   

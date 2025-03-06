@@ -209,7 +209,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     Directory.CreateDirectory(savePath);
                                 }
                                 //instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
-                                instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
+                                string result = await instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
                                 //var admsProcess = await _mssqlDbService.GetAdmsProcess(adms.Id, processName);
                                 //var admsProcessTypeId = await _mssqlDbService.GetAdmsProcessType(admsProcessId);
                                 var admsProcess = admsProcessInfoList.Find(admsProcessInfo => admsProcessInfo["admsId"].Equals(adms.Id) && admsProcessInfo["processName"].Equals(processName));
@@ -225,7 +225,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                         ModelName = modelName,
                                         AdmsProcessTypeId = admsProcessType.Id,
                                         TrainingRecordId = record.Id,
-                                        Status = "saved",
+                                        Status = result,
                                         ServerPath = savePath + modelName,
                                         ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
                                         CreatedAt = DateTime.Now
