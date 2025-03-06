@@ -2,10 +2,13 @@ using DeepLearningServer.Classes;
 using DeepLearningServer.Models;
 using DeepLearningServer.Services;
 using DeepLearningServer.Settings;
-using Euresys.Open_eVision;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using System.Text;
+using DeepLearningServer.Swagger;
 public class Program
 {
     [STAThread]
@@ -40,6 +43,22 @@ public class Program
         //    var settings = sp.GetRequiredService<IOptions<MongoDbSettings>>();
         //    return new MongoDbService(settings);
         //});
+        builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            //ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            //ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        };
+    });
+
+        builder.Services.AddAuthorization();
         builder.Services.AddSingleton<MssqlDbService>(sp =>
         {
             var settings = sp.GetRequiredService<IOptions<SqlDbSettings>>();
@@ -54,10 +73,44 @@ public class Program
         {
             options.SupportNonNullableReferenceTypes();
             options.UseAllOfToExtendReferenceSchemas();
+            options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+            {
+                Name = "Authorization",
+                Type = SecuritySchemeType.Http,
+                Scheme = "Bearer",
+                BearerFormat = "JWT",
+                In = ParameterLocation.Header,
+                Description = "JWT Authorization header using the Bearer scheme."
+            });
+            options.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
+                {
+                    new OpenApiSecurityScheme
+                    {
+                        Reference = new OpenApiReference
+                        {
+                            Type = ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    new string[] {}
+                }
+            });
+            options.SchemaFilter<EnumSchemaFilter>();
+
         });
         builder.WebHost.ConfigureKestrel(options =>
         {
-            options.ListenAnyIP(8082);
+            int port = builder.Configuration.GetValue<int>("ServerSettings:PORT");
+            Console.WriteLine("PORT" + port);
+            options.ListenAnyIP(port, listenOptions =>
+            {
+                // 최대 요청 크기를 1000MB로 설정 (원하는 크기로 조정 가능)
+                listenOptions.KestrelServerOptions.Limits.MaxRequestBodySize = 1000 * 1024 * 1024;
+            });
+            //int port = 8082
+            //options.ListenAnyIP(8082);
+            Console.WriteLine($"Listening port : {port}");
         });
 
         var app = builder.Build();
@@ -67,6 +120,14 @@ public class Program
             try
             {
                 dbContext.Database.Migrate(); // 자동 마이그레이션 수행
+                bool enableAdminSeed = builder.Configuration.GetValue<bool>("ServerSettings:EnableAdminSeed");
+                ServerSettings? serverSettings = builder.Configuration.GetSection("ServerSettings").Get<ServerSettings>();
+                if (serverSettings == null)
+                {
+                    throw new Exception("Failed to load server settings");
+                }
+                DbInitializer.Initialize(dbContext, serverSettings); // 기본 역할(Role) 데이터 시딩
+               
             }
             catch (Exception error)
             {
@@ -82,6 +143,7 @@ public class Program
         app.UseSwaggerUI();
         app.UseCors("AllowAll");
         app.UseHttpsRedirection();
+        app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();
 

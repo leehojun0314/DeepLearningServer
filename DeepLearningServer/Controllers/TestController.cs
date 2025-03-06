@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using DeepLearningServer.Attributes;
+using DeepLearningServer.Enums;
+using Microsoft.AspNetCore.Mvc;
 using System.Net.Http.Headers;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
@@ -25,6 +27,8 @@ namespace DeepLearningServer.Controllers
 
         // POST api/<TestController>
         [HttpPost("sendupload")]
+        [AuthorizeByPermission(PermissionType.RunModel)] // ✅ RunModel 권한을 가진 사용자만 접근 가능
+
         public async Task<IActionResult> SendUpload()
         {
             // 업로드할 파일 경로 설정

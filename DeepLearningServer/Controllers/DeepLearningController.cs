@@ -9,6 +9,8 @@ using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 using AutoMapper;
 using DeepLearningServer.Dtos;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using DeepLearningServer.Attributes;
 
 /// <summary>
 /// Represents a controller for handling deep learning-related API requests.
@@ -17,6 +19,7 @@ namespace DeepLearningServer.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
+
 public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     IMapper mapper, MssqlDbService mssqlDbService) : ControllerBase
 {
@@ -27,6 +30,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     private int _recordId = 0;
 
     [HttpPost("run")]
+    [AuthorizeByPermission(PermissionType.RunModel)] // ✅ RunModel 권한을 가진 사용자만 접근 가능
     public async Task<IActionResult> CreateToolAndRun([FromBody] CreateAndRunModel parameterData)
     {
         try
@@ -133,7 +137,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                         _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
                         instance.SetParameters();
-                        if (parameterData.UsePretrainedModel)
+                        if (parameterData.Classifier.UsePretrainedModel)
                         {
                             record.HasPretrainedModel = instance.LoadPretrainedModel(_serverSettings.PretrainedModelPath, parameterData.ImageSize);
                             if (!record.HasPretrainedModel)
@@ -311,6 +315,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     }
 
     [HttpDelete("stop/{imageSize}")]
+    [AuthorizeByRole(UserRoleType.Operator, UserRoleType.Manager, UserRoleType.PROCEngineer, UserRoleType.ServiceEngineer)]
     public async Task<IActionResult> StopTraining([FromRoute] ImageSize imageSize)
     {
         try

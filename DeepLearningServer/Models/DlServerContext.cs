@@ -36,6 +36,11 @@ public partial class DlServerContext : DbContext
 
     public virtual DbSet<TrainingRecord> TrainingRecords { get; set; }
     public virtual DbSet<TrainingAdmsProcess> TrainingAdmsProcess { get; set; }
+    public virtual DbSet<User> Users { get; set; }
+    public virtual DbSet<Role> Roles { get; set; }
+    public virtual DbSet<UserRole> UserRoles { get; set; }
+    public virtual DbSet<Permission> Permissions { get; set; }
+    public virtual DbSet<RolePermission> RolePermissions { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adm>(entity =>
@@ -148,7 +153,8 @@ public partial class DlServerContext : DbContext
             entity.Property(e => e.Message).HasMaxLength(255);
             entity.Property(e => e.Level).HasMaxLength(50).HasConversion<string>(v => v.ToString(), v => Enum.Parse<LogLevel>(v));
         });
-        modelBuilder.Entity<TrainingAdmsProcess>(entity => {
+        modelBuilder.Entity<TrainingAdmsProcess>(entity =>
+        {
             entity.HasIndex(e => e.AdmsProcessId, "IX_TrainingAdmsProcesses_AdmsProcessId");
             entity.HasIndex(e => e.TrainingRecordId, "IX_TrainingAdmsProcesses_TrainingRecordId");
             entity.HasOne(d => d.AdmsProcess).WithMany(p => p.TrainingAdmsProcesses).HasForeignKey(d => d.AdmsProcessId).OnDelete(DeleteBehavior.Restrict);
@@ -178,6 +184,32 @@ public partial class DlServerContext : DbContext
                   .HasForeignKey(d => d.TrainingRecordId)
                   .OnDelete(DeleteBehavior.SetNull); // 훈련 기록 삭제 시 모델 유지
         });
+        modelBuilder.Entity<UserRole>()
+            .HasKey(ur => new { ur.UserId, ur.RoleId });
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.User)
+            .WithMany(u => u.UserRoles)
+            .HasForeignKey(ur => ur.UserId);
+
+        modelBuilder.Entity<UserRole>()
+            .HasOne(ur => ur.Role)
+            .WithMany(r => r.UserRoles)
+            .HasForeignKey(ur => ur.RoleId);
+
+        modelBuilder.Entity<RolePermission>()
+            .HasKey(rp => new { rp.RoleId, rp.PermissionId });
+
+        modelBuilder.Entity<RolePermission>()
+            .HasOne(rp => rp.Role)
+            .WithMany(r => r.RolePermissions)
+            .HasForeignKey(rp => rp.RoleId);
+
+        modelBuilder.Entity<RolePermission>()
+            .HasOne(rp => rp.Permission)
+            .WithMany(p => p.RolePermissions)
+            .HasForeignKey(rp => rp.PermissionId);
+
         OnModelCreatingPartial(modelBuilder);
     }
 

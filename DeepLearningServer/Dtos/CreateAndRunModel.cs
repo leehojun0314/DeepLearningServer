@@ -8,9 +8,11 @@ namespace DeepLearningServer.Dtos;
 public class CreateAndRunModel
 {
     public required List<int> AdmsProcessIds { get; set; }
-    public required ImageSize ImageSize { get; set; }
-    public string[] Categories { get; set; }
+    [DefaultValue(0)]
+    public required ImageSize ImageSize { get; set; } = 0;
+    public required string[] Categories { get; set; }
     public bool IsDefaultModel { get; set; }
+
     [DefaultValue("Middle")]
     public string ClientModelDestination { get; set; } = "Middle";
     [DefaultValue(1f)]
@@ -21,8 +23,6 @@ public class CreateAndRunModel
 
     [DefaultValue(0f)]
     public float TestProportion { get; set; } = 0f;
-
-    public bool UsePretrainedModel { get; set; }
 
     [DefaultValue(50)]
     public int Iterations { get; set; } = 50;
@@ -126,8 +126,8 @@ public class ClassifierParamsDto
     [DefaultValue(3)]
     public uint ImageChannels { get; set; } = 3;
 
-    [DefaultValue(true)]
-    public bool UsePretrainedModel { get; set; } = true;
+    [DefaultValue(false)]
+    public bool UsePretrainedModel { get; set; } = false;
 
     [DefaultValue(true)]
     public bool ComputeHeatMap { get; set; } = true;
