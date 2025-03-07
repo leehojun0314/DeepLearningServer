@@ -54,13 +54,18 @@ namespace DeepLearningServer.Controllers
                         
                         if (project.HasFileStructureUpdates())
                         {
+                            Console.WriteLine("The project has file structure updates");
                             project.UpdateProjectFileStructure();
                             project.SaveProject();
+                            string newModelPath = Path.Combine(newModelsPath, Path.GetFileName(modelFile));
+                            EDeepLearningTool tool = project.GetToolCopy(0);
+                            tool.SaveTrainingModel(newModelPath);
                         }
-                        string newModelPath = Path.Combine(newModelsPath, Path.GetFileName(modelFile));
-                        EDeepLearningTool tool = project.GetToolCopy(0);
-                        tool.SaveTrainingModel(newModelPath);
-                        // 새로운 모델 경로 설정 후 저장
+                        else
+                        {
+                            Console.WriteLine("The project doesn't have file structure updates");
+                        }
+                       
                     }
                     catch (Exception ex)
                     {
