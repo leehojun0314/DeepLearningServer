@@ -1,4 +1,5 @@
-﻿using Euresys.Open_eVision.EasyDeepLearning;
+﻿using DeepLearningServer.Dtos;
+using Euresys.Open_eVision.EasyDeepLearning;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 
@@ -11,8 +12,8 @@ namespace DeepLearningServer.Controllers
     public class ModelController : ControllerBase
     {
         // GET: api/<ModelController>
-        [HttpGet]
-        public IActionResult Get()
+        [HttpPost]
+        public IActionResult Post([FromBody] ModelMigrations modelMigrations)
         {
             //EDeepLearningProject project = new EDeepLearningProject();
             //string projectPath = "D:\\ModelUpgradeProject\\project.edlproj";
@@ -27,9 +28,12 @@ namespace DeepLearningServer.Controllers
             //return new string[] { "value1", "value2" };
             try
             {
-                string oldModelsPath = "D:\\ModelUpgradeProject\\old";  // 기존 모델 폴더
-                string newModelsPath = "D:\\ModelUpgradeProject\\new"; // 새로운 모델 저장 폴더
-                string projectDir = "D:\\ModelUpgradeProject\\project";
+                //string oldModelsPath = "D:\\ModelUpgradeProject\\old";  // 기존 모델 폴더
+                //string newModelsPath = "D:\\ModelUpgradeProject\\new"; // 새로운 모델 저장 폴더
+                //string projectDir = "D:\\ModelUpgradeProject\\project";
+                string oldModelsPath = modelMigrations.OldModelsPath;  // 기존 모델 폴더
+                string newModelsPath = modelMigrations.NewModelsPath; // 새로운 모델 저장 폴더
+                string projectDir = modelMigrations.ProjectDir;
                 // 새 폴더가 없으면 생성
                 if (!Directory.Exists(newModelsPath))
                 {
@@ -46,19 +50,19 @@ namespace DeepLearningServer.Controllers
                 // 새 프로젝트 생성
                 EDeepLearningProject project;
 
-               
-                    project = new EDeepLearningProject();
-                    project.Type = EDeepLearningToolType.EasyClassify;
-                    project.Name = "modelUpgrade";
-                    project.ProjectDirectory = projectDir;
-                    project.SaveProject();
-                    Console.WriteLine("Saved project.");
-                    //EDeepLearningProject project = new EDeepLearningProject();
-                    // 모델 파일 업그레이드
-                    //EDeepLearningTool tool = EDeepLearningTool.Create(modelFile);
-                    //project.ImportTool(fileName, tool);
+
+                project = new EDeepLearningProject();
+                project.Type = EDeepLearningToolType.EasyClassify;
+                project.Name = "modelUpgrade";
+                project.ProjectDirectory = projectDir;
+                project.SaveProject();
+                Console.WriteLine("Saved project.");
+                //EDeepLearningProject project = new EDeepLearningProject();
+                // 모델 파일 업그레이드
+                //EDeepLearningTool tool = EDeepLearningTool.Create(modelFile);
+                //project.ImportTool(fileName, tool);
                 //project.Name = "modelUpgrade.edlproj";
-                
+
                 int toolIndex = 0;
                 foreach (string modelFile in modelFiles)
                 {
