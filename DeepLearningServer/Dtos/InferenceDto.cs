@@ -2,9 +2,7 @@
 {
     public class InferenceDto
     {
-        public string ModelPath { get; set; }
-        public string[] ImagePaths { get; set; }
-        public string DataAugPath { get; set; }
-
+        public required string ModelPath { get; set; }
+        public required string[] ImagePaths { get; set; }
     }
 }
