@@ -5,7 +5,7 @@ using Euresys.Open_eVision.EasyDeepLearning;
 
 namespace DeepLearningServer.Dtos;
 
-public class CreateAndRunModel
+public class TrainingDto
 {
     public required List<int> AdmsProcessIds { get; set; }
     [DefaultValue(0)]

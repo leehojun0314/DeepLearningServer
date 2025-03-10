@@ -21,7 +21,7 @@ public class TrainingAi
     private EClassifier? classifier;
     private EDataAugmentation? dataAug;
     private EClassificationDataset? dataset;
-    private readonly CreateAndRunModel? parameterData;
+    private readonly TrainingDto? parameterData;
 
     //private readonly string? processId;
     public int recordId;
@@ -32,7 +32,7 @@ public class TrainingAi
     private readonly string[]? categories;
 
     #region Initialize
-    public TrainingAi(CreateAndRunModel parameterData, ServerSettings serverSettings)
+    public TrainingAi(TrainingDto parameterData, ServerSettings serverSettings)
     {
 
 

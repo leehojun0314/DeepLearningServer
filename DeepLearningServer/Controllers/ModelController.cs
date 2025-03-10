@@ -13,19 +13,8 @@ namespace DeepLearningServer.Controllers
     {
         // GET: api/<ModelController>
         [HttpPost]
-        public IActionResult Post([FromBody] ModelMigrations modelMigrations)
+        public IActionResult Post([FromBody] MigrationDto modelMigrations)
         {
-            //EDeepLearningProject project = new EDeepLearningProject();
-            //string projectPath = "D:\\ModelUpgradeProject\\project.edlproj";
-            //project.Save(projectPath);
-            //project.AddTool("D:/tool.edltool");
-            //if (project.HasFileStructureUpdates())
-            //{
-            //    project.UpdateProjectFileStructure();
-
-            //    project.SaveProject();
-            //}
-            //return new string[] { "value1", "value2" };
             try
             {
                 //string oldModelsPath = "D:\\ModelUpgradeProject\\old";  // 기존 모델 폴더
@@ -44,25 +33,19 @@ namespace DeepLearningServer.Controllers
                 string[] modelFiles = Directory.GetFiles(oldModelsPath, "*.edltool");
                 if (Directory.Exists(projectDir))
                 {
+                    // 기존 프로젝트 폴더 삭제
                     Directory.Delete(projectDir, true);
                 }
                 Console.WriteLine("Creating project...");
                 // 새 프로젝트 생성
                 EDeepLearningProject project;
-
-
                 project = new EDeepLearningProject();
                 project.Type = EDeepLearningToolType.EasyClassify;
                 project.Name = "modelUpgrade";
                 project.ProjectDirectory = projectDir;
+                Console.WriteLine("Saving project...");
                 project.SaveProject();
                 Console.WriteLine("Saved project.");
-                //EDeepLearningProject project = new EDeepLearningProject();
-                // 모델 파일 업그레이드
-                //EDeepLearningTool tool = EDeepLearningTool.Create(modelFile);
-                //project.ImportTool(fileName, tool);
-                //project.Name = "modelUpgrade.edlproj";
-
                 int toolIndex = 0;
                 foreach (string modelFile in modelFiles)
                 {
@@ -74,15 +57,8 @@ namespace DeepLearningServer.Controllers
                         //project.Save(projectDir);
                         Console.WriteLine("importing tool...");
                         project.ImportTool($"Tool{toolIndex}", modelFile);
-                        Console.WriteLine("saving project...");
-                        Console.WriteLine("Save 2...");
-                        //project.Save(projectDir);
-                        //if (project.HasFileStructureUpdates())
-                        //{
-                        //Console.WriteLine("The project has file structure updates");
-                        Console.WriteLine("UpdateProjectFileStructure");
+                        Console.WriteLine("Updating project file structure...");
                         project.UpdateProjectFileStructure();
-                        //project.SaveProject();
                         string newModelPath = Path.Combine(newModelsPath, Path.GetFileName(modelFile));
                         Console.WriteLine("New model path: " + newModelPath);
                         EDeepLearningTool newTool = project.GetToolCopy(toolIndex);
@@ -90,15 +66,6 @@ namespace DeepLearningServer.Controllers
                         Console.WriteLine("Saving model...");
                         newTool.SaveTrainingModel(newModelPath);
                         Console.WriteLine("Mode saved");
-                        //project.Dispose();
-                        //newTool.Dispose();
-                        //Directory.Delete(projectDir);
-                        //}
-                        //else
-                        //{
-                        //Console.WriteLine("The project doesn't have file structure updates");
-                        //}
-
                     }
                     catch (Exception ex)
                     {

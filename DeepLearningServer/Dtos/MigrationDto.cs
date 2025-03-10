@@ -2,7 +2,8 @@
 
 namespace DeepLearningServer.Dtos
 {
-    public class ModelMigrations
+    public class MigrationDto
+
     {
         [DefaultValue("D:\\ModelUpgradeProject\\old")]
         public string OldModelsPath { get; set; }

@@ -15,7 +15,7 @@ public class SingletonAiDuo
        
     }
 
-    public static TrainingAi Instance(CreateAndRunModel parameterData, ServerSettings serverSettings)
+    public static TrainingAi Instance(TrainingDto parameterData, ServerSettings serverSettings)
     {
         if (parameterData.ImageSize == ImageSize.Middle)
         {
@@ -33,7 +33,7 @@ public class SingletonAiDuo
         //return null;
     }
 
-    public static TrainingAi CreateInstance(CreateAndRunModel parameterData, ServerSettings serverSettings)
+    public static TrainingAi CreateInstance(TrainingDto parameterData, ServerSettings serverSettings)
     {
         if (parameterData.ImageSize == ImageSize.Middle)
         {

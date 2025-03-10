@@ -31,7 +31,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
     [HttpPost("run")]
     [AuthorizeByPermission(PermissionType.RunModel)] // ✅ RunModel 권한을 가진 사용자만 접근 가능
-    public async Task<IActionResult> CreateToolAndRun([FromBody] CreateAndRunModel parameterData)
+    public async Task<IActionResult> CreateToolAndRun([FromBody] TrainingDto parameterData)
     {
         try
         {
