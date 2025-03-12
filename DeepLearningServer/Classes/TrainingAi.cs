@@ -400,8 +400,85 @@ public class TrainingAi
             //throw new Exception($"모델 저장 중 오류 발생: {error.ToString()}");
         }
     }
-  
-   
+
+    public async Task<string> SaveModel2(string localPath, string remotePath, string clientIpAddress)
+    {
+        try
+        {
+            string directoryPath = Path.GetDirectoryName(localPath);
+            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            Console.WriteLine("Creating project...");
+            EDeepLearningProject project = new EDeepLearningProject();
+            project.Type = EDeepLearningToolType.EasyClassify;
+            project.Name = "modelSave";
+            project.ProjectDirectory = directoryPath;
+            Console.WriteLine("Saving project...");
+            project.SaveProject();
+            Console.WriteLine("Saved project.");
+
+            try
+            {
+                Console.WriteLine("Importing tool...");
+                project.ImportTool("Tool0", localPath);
+                Console.WriteLine("Updating project file structure...");
+                project.UpdateProjectFileStructure();
+
+                string newModelPath = Path.Combine(directoryPath, Path.GetFileName(localPath));
+                Console.WriteLine("New model path: " + newModelPath);
+
+                EDeepLearningTool newTool = project.GetToolCopy(0);
+                Console.WriteLine("Saving model...");
+                newTool.SaveTrainingModel(newModelPath);
+                Console.WriteLine("Model saved");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Model save failed: {localPath}, Error: {ex.Message}");
+                return "error";
+            }
+
+            using (var client = new HttpClient())
+            {
+                using (var form = new MultipartFormDataContent())
+                {
+                    byte[] fileBytes = await File.ReadAllBytesAsync(localPath);
+                    var fileContent = new ByteArrayContent(fileBytes);
+                    fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                    string fileName = Path.GetFileName(localPath);
+                    form.Add(fileContent, "File", fileName);
+                    form.Add(new StringContent(remotePath), "ModelPath");
+
+                    Console.WriteLine($"Remote path: {remotePath}");
+                    Console.WriteLine("Client IP address: " + clientIpAddress);
+
+                    string apiUrl = $"http://{clientIpAddress}/api/model/upload";
+                    HttpResponseMessage response = await client.PostAsync(apiUrl, form);
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        Console.WriteLine("Model upload success: " + response.Content.ReadAsStringAsync().Result);
+                        return "saved";
+                    }
+                    else
+                    {
+                        Console.WriteLine("Model upload failed: " + response.StatusCode);
+                        return "pending";
+                    }
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            Console.WriteLine($"Error saving model: {error.Message} {error.ToString()}");
+            return "error";
+        }
+    }
+
+
 
     public void LoadModel(string filePath)
     {
