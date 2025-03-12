@@ -138,7 +138,7 @@ public class Program
         app.MapGet("/", () =>
             "Greetings from deep learning server " + DateTime.Now.ToLongTimeString());
         app.UseMiddleware<GlobalExceptionMiddleware>();
-
+        ToolStatusManager.SetProcessRunning(false);
         app.UseSwagger();
         app.UseSwaggerUI();
         app.UseCors("AllowAll");
