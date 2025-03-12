@@ -57,14 +57,19 @@ namespace DeepLearningServer.Controllers
                         //project.Save(projectDir);
                         Console.WriteLine("importing tool...");
                         project.ImportTool($"Tool{toolIndex}", modelFile);
+
                         Console.WriteLine("Updating project file structure...");
                         project.UpdateProjectFileStructure();
+
                         string newModelPath = Path.Combine(newModelsPath, Path.GetFileName(modelFile));
                         Console.WriteLine("New model path: " + newModelPath);
                         EDeepLearningTool newTool = project.GetToolCopy(toolIndex);
+
                         toolIndex++;
                         Console.WriteLine("Saving model...");
-                        newTool.SaveTrainingModel(newModelPath);
+                        //newTool.SaveTrainingModel(newModelPath);
+
+                        newTool.Save(newModelPath, true);
                         Console.WriteLine("Mode saved");
                     }
                     catch (Exception ex)

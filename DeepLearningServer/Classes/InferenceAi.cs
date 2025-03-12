@@ -74,6 +74,7 @@ namespace DeepLearningServer.Classes
                 }
 
                 classifier.InitializeInference(ref images);
+                
             }
             else
             {

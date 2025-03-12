@@ -31,6 +31,10 @@ public class TrainingAi
     private EClassificationDataset? validationDataset;
     private readonly string[]? categories;
 
+    public void Test()
+    {
+        
+    }
     #region Initialize
     public TrainingAi(TrainingDto parameterData, ServerSettings serverSettings)
     {
@@ -245,6 +249,8 @@ public class TrainingAi
             {
                 break;
             }
+            classifier.StopTraining(false);
+            
         }
         // classifier.WaitForTrainingCompletion();
 
