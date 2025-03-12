@@ -249,7 +249,6 @@ public class TrainingAi
             {
                 break;
             }
-            classifier.StopTraining(false);
             
         }
         // classifier.WaitForTrainingCompletion();
@@ -355,7 +354,7 @@ public class TrainingAi
             }
 
             // 모델 저장
-            classifier?.SaveTrainingModel(localPath);
+            classifier?.Save(localPath, true);
 
             using (var client = new HttpClient())
             {
@@ -405,17 +404,28 @@ public class TrainingAi
     {
         try
         {
+            Console.WriteLine("Received local path: " + localPath);
             string directoryPath = Path.GetDirectoryName(localPath);
-            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+            Console.WriteLine("Directory Path: " + directoryPath);
+            string tempPath = "D:\\ModelUpgradeProject\\project";
+            Console.WriteLine($"temp path: {tempPath}");
+            Console.WriteLine("temp path2: " + tempPath);
+            if (!string.IsNullOrEmpty(directoryPath) || !Directory.Exists(directoryPath))
             {
                 Directory.CreateDirectory(directoryPath);
             }
+           
 
+            if (Directory.Exists(tempPath))
+            {
+                // 기존 프로젝트 폴더 삭제
+                Directory.Delete(tempPath, true);
+            }
             Console.WriteLine("Creating project...");
             EDeepLearningProject project = new EDeepLearningProject();
             project.Type = EDeepLearningToolType.EasyClassify;
             project.Name = "modelSave";
-            project.ProjectDirectory = directoryPath;
+            project.ProjectDirectory = tempPath;
             Console.WriteLine("Saving project...");
             project.SaveProject();
             Console.WriteLine("Saved project.");
@@ -427,12 +437,17 @@ public class TrainingAi
                 Console.WriteLine("Updating project file structure...");
                 project.UpdateProjectFileStructure();
 
-                string newModelPath = Path.Combine(directoryPath, Path.GetFileName(localPath));
-                Console.WriteLine("New model path: " + newModelPath);
+                string modifiedPath = "";
+                string[] parts = localPath.Split("\\");
+                foreach(string part in parts)
+                {
+                    Console.WriteLine("part: " + part);
+                    modifiedPath += part + "\\";
+                }
 
                 EDeepLearningTool newTool = project.GetToolCopy(0);
                 Console.WriteLine("Saving model...");
-                newTool.SaveTrainingModel(newModelPath);
+                newTool.SaveTrainingModel(localPath);
                 Console.WriteLine("Model saved");
             }
             catch (Exception ex)
