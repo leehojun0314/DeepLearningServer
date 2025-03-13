@@ -31,10 +31,6 @@ public class TrainingAi
     private EClassificationDataset? validationDataset;
     private readonly string[]? categories;
 
-    public void Test()
-    {
-        
-    }
     #region Initialize
     public TrainingAi(TrainingDto parameterData, ServerSettings serverSettings)
     {
@@ -231,6 +227,8 @@ public class TrainingAi
             classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
         }
         int iteration = 0;
+        float prevAccuracy = -1; // 이전 Accuracy 저장 변수
+        int sameAccuracyCount = 0; // 이전 Accuracy와 같은 Accuracy가 나온 횟수
         while (true)
         {
             //iteration++;
@@ -244,6 +242,21 @@ public class TrainingAi
 
             cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
                 );
+            // 동일한 Accuracy가 10번 반복되었으면 트레이닝 강제 종료
+            if (currentAccuracy == prevAccuracy)
+            {
+                sameAccuracyCount++;
+                if (sameAccuracyCount >= 10)
+                {
+                    Console.WriteLine("Accuracy hasn't improved for 10 iterations. Stopping training...");
+                    classifier.StopTraining(false);
+                    break;
+                }
+            }
+            else
+            {
+                sameAccuracyCount = 0; // Accuracy가 바뀌었으면 카운트 초기화
+            }
             iteration++;
             if (classifier.IsTraining() == false)
             {
