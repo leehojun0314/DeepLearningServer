@@ -41,6 +41,7 @@ public partial class DlServerContext : DbContext
     public virtual DbSet<UserRole> UserRoles { get; set; }
     public virtual DbSet<Permission> Permissions { get; set; }
     public virtual DbSet<RolePermission> RolePermissions { get; set; }
+    public virtual DbSet<PwdResetRequest> PwdResetRequests { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adm>(entity =>
@@ -209,6 +210,20 @@ public partial class DlServerContext : DbContext
             .HasOne(rp => rp.Permission)
             .WithMany(p => p.RolePermissions)
             .HasForeignKey(rp => rp.PermissionId);
+        modelBuilder.Entity<PwdResetRequest>(entity =>
+        {
+            entity.HasIndex(e => e.UserId, "IX_PwdResetRequests_UserId");
+
+            entity.Property(e => e.RequestedAt).HasColumnType("datetime");
+            entity.Property(e => e.IsUsed).HasColumnType("bit");
+
+            entity.HasOne(d => d.User)
+                  .WithMany(p => p.PwdResetRequests)
+                  .HasForeignKey(d => d.UserId)
+                  .OnDelete(DeleteBehavior.Cascade); // 유저 삭제 시 요청도 삭제
+        });
+
+
 
         OnModelCreatingPartial(modelBuilder);
     }

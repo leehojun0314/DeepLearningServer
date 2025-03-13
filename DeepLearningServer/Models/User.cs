@@ -18,5 +18,6 @@ namespace DeepLearningServer.Models
         public bool IsActive { get; set; } = true;
 
         public virtual ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
+        public virtual ICollection<PwdResetRequest> PwdResetRequests { get; set; } = new List<PwdResetRequest>();
     }
 }
