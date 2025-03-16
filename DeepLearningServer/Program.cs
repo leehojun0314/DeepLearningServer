@@ -120,13 +120,7 @@ public class Program
             try
             {
                 dbContext.Database.Migrate(); // 자동 마이그레이션 수행
-                bool enableAdminSeed = builder.Configuration.GetValue<bool>("ServerSettings:EnableAdminSeed");
-                ServerSettings? serverSettings = builder.Configuration.GetSection("ServerSettings").Get<ServerSettings>();
-                if (serverSettings == null)
-                {
-                    throw new Exception("Failed to load server settings");
-                }
-                DbInitializer.Initialize(dbContext, serverSettings); // 기본 역할(Role) 데이터 시딩
+           
                
             }
             catch (Exception error)
