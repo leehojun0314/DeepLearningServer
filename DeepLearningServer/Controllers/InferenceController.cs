@@ -10,6 +10,34 @@ namespace DeepLearningServer.Controllers
     [ApiController]
     public class InferenceController : ControllerBase
     {
+        //[HttpPost]
+        //public IActionResult Post([FromBody] InferenceDto inferenceDto)
+        //{
+        //    if (!ToolStatusManager.IsProcessRunning())
+        //    {
+        //        ToolStatusManager.SetProcessRunning(true);
+        //        try
+        //        {
+        //            InferenceAi inferenceAi = new InferenceAi(inferenceDto.ModelPath);
+        //            string[] imagePaths = inferenceDto.ImagePaths;
+        //            EClassificationResult[] results = inferenceAi.ClassifyMultipleImages(imagePaths);
+        //            foreach(var result in results)
+        //            {
+        //                Console.WriteLine($"Class : {result.BestLabel}, Score : {result.BestProbability}");
+        //            }
+        //            return Ok(results);
+        //        }
+        //        catch (Exception e)
+        //        {
+        //            return BadRequest(e.Message);
+        //        }
+        //        finally
+        //        {
+        //            ToolStatusManager.SetProcessRunning(false);
+        //        }
+        //    }
+        //    return Ok("Inference Controller");
+        //}
         [HttpPost]
         public IActionResult Post([FromBody] InferenceDto inferenceDto)
         {
@@ -19,13 +47,10 @@ namespace DeepLearningServer.Controllers
                 try
                 {
                     InferenceAi inferenceAi = new InferenceAi(inferenceDto.ModelPath);
-                    string[] imagePaths = inferenceDto.ImagePaths;
-                    EClassificationResult[] results = inferenceAi.Classify(imagePaths);
-                    foreach(var result in results)
-                    {
-                        Console.WriteLine($"Class : {result.BestLabel}, Score : {result.BestProbability}");
-                    }
-                    return Ok(results);
+                    string imagePaths = inferenceDto.ImagePath;
+                    EClassificationResult result = inferenceAi.ClassifySingleImage(imagePaths);
+                    Console.WriteLine($"Best label: {result.BestLabel}, Best probability: {result.BestProbability}");
+                    return Ok(result.BestLabel);
                 }
                 catch (Exception e)
                 {
