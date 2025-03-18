@@ -50,7 +50,7 @@ namespace DeepLearningServer.Controllers
                     string imagePaths = inferenceDto.ImagePath;
                     EClassificationResult result = inferenceAi.ClassifySingleImage(imagePaths);
                     Console.WriteLine($"Best label: {result.BestLabel}, Best probability: {result.BestProbability}");
-                    return Ok(result.BestLabel);
+                    return Ok(new {BestLabel = result.BestLabel, BestProbability = result.BestProbability});
                 }
                 catch (Exception e)
                 {
