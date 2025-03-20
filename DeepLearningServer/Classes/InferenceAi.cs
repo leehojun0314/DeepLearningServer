@@ -10,11 +10,12 @@ namespace DeepLearningServer.Classes
         {
             classifier = new EClassifier();
             classifier.EnableGPU = true;
+            Console.WriteLine("Loading model...");
             classifier.Load(modelPath);
-            classifier.LoadInferenceModel(modelPath);
+            Console.WriteLine("Model Loaded");
+            //classifier.LoadInferenceModel(modelPath);
         }
-
-        public EClassificationResult[] Classify(string[] imagePaths)
+        public EClassificationResult ClassifySingleImage(string imagePath)
         {
             try
             {
@@ -24,22 +25,59 @@ namespace DeepLearningServer.Classes
                 {
                     throw new Exception("Classifier is not granted");
                 }
-                if (classifier.HasTrainingModel())
+                //if (classifier.HasTrainingModel())
+                //{
+                //    throw new Exception("Model is not granted");
+                //}
+                Console.WriteLine("Has training model");
+                
+                        EImageBW8 eImage = new EImageBW8();
+                        eImage.Load(imagePath); // 로드
+                    var classifyResult = classifier.Classify(eImage);
+                    Console.WriteLine("classify result: " + classifyResult);
+                 
+                    return classifyResult;
+                
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error on classify: " + e);
+                throw new Exception(e.Message);
+            }
+        }
+        public EClassificationResult[] ClassifyMultipleImages(string[] imagePaths)
+        {
+            try
+            {
+
+
+                if (classifier == null)
                 {
-                    throw new Exception("Model is not granted");
+                    throw new Exception("Classifier is not granted");
                 }
-                if (imagePaths != null && imagePaths.Length > 0 && classifier != null && classifier.HasTrainingModel())
+                //if (classifier.HasTrainingModel())
+                //{
+                //    throw new Exception("Model is not granted");
+                //}
+                Console.WriteLine("Has training model");
+                if (imagePaths != null && imagePaths.Length > 0 && classifier != null)
                 {
                     EBaseROI[] images = new EBaseROI[imagePaths.Length];
 
                     for (int i = 0; i < imagePaths.Length; i++)
                     {
                         EImageBW8 eImage = new EImageBW8();
+                        Console.WriteLine("Try to load image : " + imagePaths[i]);
                         eImage.Load(imagePaths[i]); // 로드
                         images[i] = eImage;         // EBaseROI 배열에 저장
                     }
-                    classifier.EnableGPU = true;
-                    return classifier.Classify(ref images);
+                    var classifyResults = classifier.Classify(ref images);
+                    Console.WriteLine("classify result: " + classifyResults);
+                    foreach(var classifyResult in classifyResults)
+                    {
+                        Console.WriteLine($"Classify result: best label {classifyResult.BestLabel}, best prob {classifyResult.BestProbability} ");
+                    }
+                    return classifyResults;
                 }
                 else
                 {
@@ -48,6 +86,7 @@ namespace DeepLearningServer.Classes
             }
             catch (Exception e)
             {
+                Console.WriteLine("Error on classify: " + e);
                 throw new Exception(e.Message);
             }
         }

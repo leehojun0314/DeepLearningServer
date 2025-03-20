@@ -69,7 +69,7 @@ AND NOT EXISTS (
 -- (Admin 계정이 없으면 생성)
 INSERT INTO Users (Username, PasswordHash, IsActive)
 SELECT 'ADMS', '$2a$11$9iDxqe19.mhiuPQnZECh1O83WbpUpYgiWdtOYQR0JhZvt3tMCsWFK', 1
-WHERE NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'ADMIN');
+WHERE NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'ADMS');
 
 -- ADMIN 역할 확인 및 생성
 INSERT INTO Roles (Name)
@@ -79,7 +79,7 @@ SELECT 'ServiceEngineer' WHERE NOT EXISTS (SELECT 1 FROM Roles WHERE Name = 'Ser
 INSERT INTO UserRoles (UserId, RoleId)
 SELECT u.Id, r.Id
 FROM Users u, Roles r
-WHERE u.Username = 'ADMIN' AND r.Name = 'ServiceEngineer'
+WHERE u.Username = 'ADMS' AND r.Name = 'ServiceEngineer'
 AND NOT EXISTS (
     SELECT 1 FROM UserRoles ur WHERE ur.UserId = u.Id AND ur.RoleId = r.Id
 );
