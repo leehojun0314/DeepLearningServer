@@ -81,14 +81,7 @@ namespace DeepLearningServer.Classes
                 throw new Exception("Invalid image list");
             }
         }
-        public void LoadInferenceModel(string modelPath)
-        {
-            if (classifier == null)
-            {
-                throw new Exception("Classifier is not granted");
-            }
-            classifier.LoadInferenceModel(modelPath);
-        }
+      
      
     }
 }

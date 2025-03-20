@@ -1,7 +1,9 @@
 ﻿using DeepLearningServer.Dtos;
+using DeepLearningServer.Settings;
 using Euresys.Open_eVision.EasyDeepLearning;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.Extensions.Options;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -9,10 +11,41 @@ namespace DeepLearningServer.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ModelController : ControllerBase
+    public class ModelController(IOptions<ServerSettings> serverSettings) : ControllerBase
     {
-        // GET: api/<ModelController>
-        [HttpPost]
+        private readonly ServerSettings _serverSettings = serverSettings.Value;
+
+        [HttpPost("upload")]
+        [Consumes("multipart/form-data")]
+
+        public IActionResult Post([FromBody] UploadModelDto uploadModelDto)
+        {
+            try
+            {
+                string modelPath = uploadModelDto.ModelPath;
+                bool isRelativePath = uploadModelDto.IsRelativePath;
+                if(isRelativePath)
+                {
+                    modelPath = Path.Combine(_serverSettings.ModelDirectory, modelPath);
+                }
+                var file = uploadModelDto.File;
+                if (file.Length > 0)
+                {
+                    string filePath = Path.Combine(modelPath, file.FileName);
+                    using (var stream = new FileStream(filePath, FileMode.Create))
+                    {
+                        file.CopyTo(stream);
+                    }
+                    return Ok(new { Message = "모델 업로드 완료", FilePath = filePath });
+                }
+                return BadRequest("파일이 없습니다.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "모델 업로드 중 오류 발생", Error = ex.Message });
+            }
+        }
+        [HttpPost("migrate")]
         public IActionResult Post([FromBody] MigrationDto modelMigrations)
         {
             try

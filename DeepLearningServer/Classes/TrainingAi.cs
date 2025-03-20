@@ -198,7 +198,7 @@ public class TrainingAi
     }
 
     #endregion
-    public bool LoadPretrainedModel(string path, ImageSize size)
+    public bool LoadPretrainedModel( ImageSize size)
     {
         if (classifier == null)
         {

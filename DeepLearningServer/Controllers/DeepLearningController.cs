@@ -139,7 +139,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         instance.SetParameters();
                         if (parameterData.Classifier.UsePretrainedModel)
                         {
-                            record.HasPretrainedModel = instance.LoadPretrainedModel(_serverSettings.PretrainedModelPath, parameterData.ImageSize);
+                            record.HasPretrainedModel = instance.LoadPretrainedModel( parameterData.ImageSize);
                             if (!record.HasPretrainedModel)
                             {
                                 throw new Exception("Failed to use pretrained model");

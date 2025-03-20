@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Identity.Data;
 using DeepLearningServer.Enums;
 using System.ComponentModel;
 namespace DeepLearningServer.Controllers;
-[Route("api/auth")]
+[Route("api/[controller]")]
 [ApiController]
 public class AuthController : ControllerBase
 {
