@@ -184,7 +184,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         {
                             foreach (var processName in processNames)
                             {
-                                string savePath = $@"D:\Models\{adms.Name}\{processName}\{timeStamp}\";
+                                string savePath = $"{_serverSettings.ModelDirectory}\\{adms.Name}\\{processName}\\{timeStamp}\\";
                                 string modelName;
                                 if (parameterData.IsDefaultModel)
                                 {
