@@ -75,19 +75,25 @@ namespace DeepLearningServer.Controllers
                 {
                     InferenceAi inferenceAi = new InferenceAi(inferenceDto.ModelPath);
                     string[] imagePaths = inferenceDto.ImagePaths;
-                    EClassificationResult[] result = inferenceAi.ClassifyMultipleImages(imagePaths);
+                    EClassificationResult[] results = inferenceAi.ClassifyMultipleImages(imagePaths);
                     var dic = new Dictionary<string, object>();
-                    foreach (var res in result)
+                    var response = results.Select(result => new { result.BestLabel, result.BestProbability }).ToList();
+                    foreach (var result in results)
                     {
-                        Console.WriteLine($"Best label: {res.BestLabel}, Best probability: {res.BestProbability}");
-                        dic.Add("BestLabel", res.BestLabel);
-                        dic.Add("BestProbability", res.BestProbability);
+                        Console.WriteLine($"Best label: {result.BestLabel}, Best probability: {result.BestProbability}");
+                        //dic.Add("BestLabel", res.BestLabel);
+                        //dic.Add("BestProbability", res.BestProbability);
 
                     }
-                    return Ok(dic);
+                    foreach(var el in response)
+                    {
+                        Console.WriteLine("el: " + el.BestLabel);
+                    }
+                    return Ok(response);
                 }
                 catch (Exception e)
                 {
+                    Console.WriteLine("Error : " + e.Message);
                     return BadRequest(e.Message);
                 }
                 finally

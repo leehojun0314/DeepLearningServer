@@ -62,7 +62,7 @@ namespace DeepLearningServer.Classes
                 Console.WriteLine("Has training model");
                 if (imagePaths != null && imagePaths.Length > 0 && classifier != null)
                 {
-                    EBaseROI[] images = new EBaseROI[imagePaths.Length];
+                    EImageBW8[] images = new EImageBW8[imagePaths.Length];
 
                     for (int i = 0; i < imagePaths.Length; i++)
                     {
