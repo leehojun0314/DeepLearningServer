@@ -81,7 +81,19 @@ namespace DeepLearningServer.Controllers
                     var response = results.Select(result => new ClassificationResultDto
                     {
                         BestLabel = result.BestLabel,
-                        BestProbability = result.BestProbability
+                        BestProbability = result.BestProbability,
+                        GroundTruthLabel = result.GroundtruthLabel,
+                        // NumLabels 만큼 순회하여 각 레이블의 이름과 확률을 담음
+                        LabelProbabilities = Enumerable.Range(0, result.NumLabels)
+                          .Select(i =>
+                          {
+                              string label = result.GetLabel(i);
+                              return new LabelProbabilityDto
+                              {
+                                  Label = label,
+                                  Probability = result.GetProbability(label)
+                              };
+                          }).ToArray()
                     }).ToList();
 
                     return Ok(response); // JSON 응답 반환

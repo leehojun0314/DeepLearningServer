@@ -12,6 +12,7 @@ namespace DeepLearningServer.Classes
             classifier.EnableGPU = true;
             Console.WriteLine("Loading model...");
             classifier.Load(modelPath);
+            
             Console.WriteLine("Model Loaded");
             //classifier.LoadInferenceModel(modelPath);
         }
@@ -72,6 +73,7 @@ namespace DeepLearningServer.Classes
                         images[i] = eImage;         // EBaseROI 배열에 저장
                     }
                     var classifyResults = classifier.Classify(ref images);
+                    
                     Console.WriteLine("classify result: " + classifyResults);
                     foreach(var classifyResult in classifyResults)
                     {
