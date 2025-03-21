@@ -82,7 +82,6 @@ namespace DeepLearningServer.Controllers
                     {
                         BestLabel = result.BestLabel,
                         BestProbability = result.BestProbability,
-                        GroundTruthLabel = result.GroundtruthLabel,
                         // NumLabels 만큼 순회하여 각 레이블의 이름과 확률을 담음
                         LabelProbabilities = Enumerable.Range(0, result.NumLabels)
                           .Select(i =>
