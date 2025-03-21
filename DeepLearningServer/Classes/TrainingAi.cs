@@ -384,7 +384,7 @@ public class TrainingAi
                     //form.Add(new StringContent("D:/"+ Path.GetFileName(filePath)), "ModelPath");
                     Console.WriteLine($"Remote path: {remotePath}");
                     form.Add(new StringContent(remotePath), "ModelPath");
-                    Console.WriteLine($"form.ToString(): {form.ToString()}");
+                    //Console.WriteLine($"form.ToString(): {form.ToString()}");
                     Console.WriteLine("client ip address: " + clientIpAddress);
                     // 🔹 API 엔드포인트
                     string apiUrl = $"http://{clientIpAddress}/api/model/upload";
@@ -421,6 +421,10 @@ public class TrainingAi
             string directoryPath = Path.GetDirectoryName(localPath);
             Console.WriteLine("Directory Path: " + directoryPath);
             string tempPath = "D:\\ModelUpgradeProject\\project";
+            if (!string.IsNullOrEmpty(tempPath) || !Directory.Exists(tempPath))
+            {
+                Directory.CreateDirectory(tempPath);
+            }
             Console.WriteLine($"temp path: {tempPath}");
             Console.WriteLine("temp path2: " + tempPath);
             if (!string.IsNullOrEmpty(directoryPath) || !Directory.Exists(directoryPath))
@@ -479,10 +483,8 @@ public class TrainingAi
                     string fileName = Path.GetFileName(localPath);
                     form.Add(fileContent, "File", fileName);
                     form.Add(new StringContent(remotePath), "ModelPath");
-
                     Console.WriteLine($"Remote path: {remotePath}");
                     Console.WriteLine("Client IP address: " + clientIpAddress);
-
                     string apiUrl = $"http://{clientIpAddress}/api/model/upload";
                     HttpResponseMessage response = await client.PostAsync(apiUrl, form);
 

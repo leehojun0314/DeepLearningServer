@@ -18,7 +18,7 @@ namespace DeepLearningServer.Controllers
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
 
-        public IActionResult Post([FromBody] UploadModelDto uploadModelDto)
+        public IActionResult Post([FromForm] UploadModelDto uploadModelDto)
         {
             try
             {

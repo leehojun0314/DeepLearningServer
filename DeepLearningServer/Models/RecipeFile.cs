@@ -12,6 +12,7 @@ public partial class RecipeFile
     public string Content { get; set; } = null!;
 
     public string FileType { get; set; } = null!;
+    public string SyncStatus { get; set; } = null!;
 
     public int AdmsProcessId { get; set; }
 
