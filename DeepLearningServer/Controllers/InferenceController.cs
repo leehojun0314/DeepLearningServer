@@ -76,24 +76,20 @@ namespace DeepLearningServer.Controllers
                     InferenceAi inferenceAi = new InferenceAi(inferenceDto.ModelPath);
                     string[] imagePaths = inferenceDto.ImagePaths;
                     EClassificationResult[] results = inferenceAi.ClassifyMultipleImages(imagePaths);
-                    var dic = new Dictionary<string, object>();
-                    var response = results.Select(result => new { result.BestLabel, result.BestProbability }).ToList();
-                    foreach (var result in results)
-                    {
-                        Console.WriteLine($"Best label: {result.BestLabel}, Best probability: {result.BestProbability}");
-                        //dic.Add("BestLabel", res.BestLabel);
-                        //dic.Add("BestProbability", res.BestProbability);
 
-                    }
-                    foreach(var el in response)
+                    // 명시적 DTO 사용
+                    var response = results.Select(result => new ClassificationResultDto
                     {
-                        Console.WriteLine("el: " + el.BestLabel);
-                    }
-                    return Ok(response);
+                        BestLabel = result.BestLabel,
+                        BestProbability = result.BestProbability
+                    }).ToList();
+
+                    return Ok(response); // JSON 응답 반환
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("Error : " + e.Message);
+                    Console.WriteLine("Error: " + e.Message);
+                    Console.WriteLine("StackTrace: " + e.StackTrace);
                     return BadRequest(e.Message);
                 }
                 finally
