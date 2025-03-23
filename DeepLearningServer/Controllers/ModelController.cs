@@ -26,6 +26,7 @@ namespace DeepLearningServer.Controllers
                 if (file.Length > 0)
                 {
                     string filePath = Path.Combine(modelPath);
+                    Console.WriteLine("Model upload file path: " + filePath);
                     using (var stream = new FileStream(filePath, FileMode.Create))
                     {
                         file.CopyTo(stream);
