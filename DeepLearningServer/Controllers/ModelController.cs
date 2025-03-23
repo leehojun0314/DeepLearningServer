@@ -4,6 +4,7 @@ using Euresys.Open_eVision.EasyDeepLearning;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Options;
+using SharpCompress.Common;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -22,7 +23,17 @@ namespace DeepLearningServer.Controllers
             try
             {
                 string modelPath = uploadModelDto.ModelPath;
+                if (modelPath == null)
+                {
+                    return BadRequest("Model path not given");
+                }
                 var file = uploadModelDto.File;
+                string directoryPath = Path.GetDirectoryName(modelPath);
+                // 디렉토리가 존재하지 않으면 생성
+                if (!Directory.Exists(directoryPath))
+                {
+                    Directory.CreateDirectory(directoryPath);
+                }
                 if (file.Length > 0)
                 {
                     string filePath = Path.Combine(modelPath);
@@ -31,13 +42,14 @@ namespace DeepLearningServer.Controllers
                     {
                         file.CopyTo(stream);
                     }
-                    return Ok(new { Message = "모델 업로드 완료", FilePath = filePath });
+                    Console.WriteLine("Model upload compelete.");
+                    return Ok(new { Message = "Model upload compelete.", FilePath = filePath });
                 }
-                return BadRequest("파일이 없습니다.");
+                return BadRequest("File does not exist.");
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { Message = "모델 업로드 중 오류 발생", Error = ex.Message });
+                return StatusCode(500, new { Message = "Error on uploading model", Error = ex.Message });
             }
         }
         [HttpPost("migrate")]
@@ -102,16 +114,16 @@ namespace DeepLearningServer.Controllers
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"모델 업그레이드 실패: {modelFile}, 오류: {ex.Message}");
+                        Console.WriteLine($"Error on upgrading model. {modelFile}, Error: {ex.Message}");
                         throw new Exception(ex.Message);
                     }
                 }
 
-                return Ok(new { Message = "모든 모델 업그레이드 완료", UpdatedFiles = modelFiles.Length });
+                return Ok(new { Message = "All models upgrade complete.", UpdatedFiles = modelFiles.Length });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { Message = "업그레이드 중 오류 발생", Error = ex.Message });
+                return StatusCode(500, new { Message = "Error on upgrading model.", Error = ex.Message });
             }
         }
 
