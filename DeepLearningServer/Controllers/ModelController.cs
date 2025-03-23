@@ -12,8 +12,9 @@ namespace DeepLearningServer.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ModelController() : ControllerBase
+    public class ModelController(IOptions<ServerSettings> serverSettings) : ControllerBase
     {
+        private readonly ServerSettings _serverSettings = serverSettings.Value;
 
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
@@ -22,7 +23,7 @@ namespace DeepLearningServer.Controllers
         {
             try
             {
-                string modelPath = uploadModelDto.ModelPath;
+                string modelPath = $"{_serverSettings.ModelDirectory}\\{uploadModelDto.ModelPath}";
                 if (modelPath == null)
                 {
                     return BadRequest("Model path not given");
