@@ -7,7 +7,5 @@ namespace DeepLearningServer.Dtos
         [DefaultValue("D:\\Models\\modelname.edltool")]
         public required string ModelPath { get; set; }
         public required IFormFile File { get; set; }
-        [DefaultValue(false)]
-        public required bool IsRelativePath { get; set; }
     }
 }

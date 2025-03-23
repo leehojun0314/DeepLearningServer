@@ -11,9 +11,8 @@ namespace DeepLearningServer.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ModelController(IOptions<ServerSettings> serverSettings) : ControllerBase
+    public class ModelController() : ControllerBase
     {
-        private readonly ServerSettings _serverSettings = serverSettings.Value;
 
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
@@ -23,15 +22,10 @@ namespace DeepLearningServer.Controllers
             try
             {
                 string modelPath = uploadModelDto.ModelPath;
-                bool isRelativePath = uploadModelDto.IsRelativePath;
-                if(isRelativePath)
-                {
-                    modelPath = Path.Combine(_serverSettings.ModelDirectory, modelPath);
-                }
                 var file = uploadModelDto.File;
                 if (file.Length > 0)
                 {
-                    string filePath = Path.Combine(modelPath, file.FileName);
+                    string filePath = Path.Combine(modelPath);
                     using (var stream = new FileStream(filePath, FileMode.Create))
                     {
                         file.CopyTo(stream);
