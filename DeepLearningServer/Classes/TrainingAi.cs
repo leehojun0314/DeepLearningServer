@@ -337,7 +337,8 @@ public class TrainingAi
             Console.WriteLine($"label currentAccuracy: {metrics.GetLabelAccuracy(upperCategory)}");
             dictionary.Add(category.ToLower() + "Accuracy", metrics.GetLabelAccuracy(upperCategory));
             dictionary.Add(category.ToLower() + "Error", metrics.GetLabelError(upperCategory));
-            
+            uint getConfusionResult = metrics.GetConfusion(category, category);
+            Console.WriteLine($"Get confusion result: {category}, {getConfusionResult}");
         }
 
         return dictionary;
