@@ -24,6 +24,7 @@ namespace DeepLearningServer.Controllers
             try
             {
                 string modelPath = $"{_serverSettings.ModelDirectory}\\{uploadModelDto.ModelPath}";
+                Console.WriteLine("Model path: " + modelPath);
                 if (modelPath == null)
                 {
                     return BadRequest("Model path not given");
