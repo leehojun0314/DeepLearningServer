@@ -99,5 +99,5 @@ public partial class TrainingRecord
     public virtual ICollection<ProgressEntry> ProgressEntries { get; set; } = new List<ProgressEntry>();
     public virtual ICollection<TrainingAdmsProcess> TrainingAdmsProcesses { get; set; } = new List<TrainingAdmsProcess>();
     public virtual ICollection<ModelRecord> ModelRecords { get; set; } = new List<ModelRecord>();
-
+    public virtual ICollection<ConfusionMatrix> ConfusionMatrices { get; set; } = new List<ConfusionMatrix>();
 }

@@ -42,6 +42,7 @@ public partial class DlServerContext : DbContext
     public virtual DbSet<Permission> Permissions { get; set; }
     public virtual DbSet<RolePermission> RolePermissions { get; set; }
     public virtual DbSet<PwdResetRequest> PwdResetRequests { get; set; }
+    public virtual DbSet<ConfusionMatrix> ConfusionMatrices { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adm>(entity =>
@@ -223,7 +224,19 @@ public partial class DlServerContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade); // 유저 삭제 시 요청도 삭제
         });
 
-
+        modelBuilder.Entity<ConfusionMatrix>(entity =>
+        {
+            entity.HasIndex(e => e.TrainingRecordId, "IX_ConfusionMatrices_TrainingRecordId");
+            
+            entity.Property(e => e.TrueLabel).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.PredictedLabel).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+            
+            entity.HasOne(d => d.TrainingRecord)
+                  .WithMany(p => p.ConfusionMatrices)
+                  .HasForeignKey(d => d.TrainingRecordId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
 
         OnModelCreatingPartial(modelBuilder);
     }

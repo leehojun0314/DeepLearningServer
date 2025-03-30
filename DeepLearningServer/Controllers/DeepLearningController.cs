@@ -11,6 +11,7 @@ using DeepLearningServer.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using DeepLearningServer.Attributes;
+using Microsoft.Extensions.Configuration;
 
 /// <summary>
 /// Represents a controller for handling deep learning-related API requests.
@@ -21,12 +22,13 @@ namespace DeepLearningServer.Controllers;
 [ApiController]
 
 public class DeepLearningController(IOptions<ServerSettings> serverSettings,
-    IMapper mapper, MssqlDbService mssqlDbService) : ControllerBase
+    IMapper mapper, MssqlDbService mssqlDbService, IConfiguration configuration) : ControllerBase
 {
     //private readonly MongoDbService _mongoDbService;
     private readonly ServerSettings _serverSettings = serverSettings.Value;
     private readonly MssqlDbService _mssqlDbService = mssqlDbService;
     private readonly IMapper _mapper = mapper;
+    private readonly IConfiguration _configuration = configuration;
     private int _recordId = 0;
 
     [HttpPost("run")]
@@ -126,10 +128,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         int numImages = 0;
                         TimeSpan elapsedTime = MeasureExecutionTime.Measure(() =>
                         {
-                            //foreach (var processName in processNames)
-                            //{
-                            //    numImages += instance.LoadImages(processName);
-                            //}
                             numImages = instance.LoadImages(processNames.ToArray());
                         });
 
@@ -149,15 +147,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
                         {
                             _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
-                        //    var updates = new Dictionary<string, object>
-                        //{
-                        //    { "Status", TrainingStatus.Running },
-                        //    { "Progress", progress },
-                        //    { "BestIteration", bestIteration },
-                        //    { "Accuracy", bestAccuracy }
-
-                        //};
-
                             var newEntry = new ProgressEntry
                             {
                                 IsTraining = isTraining,
@@ -172,9 +161,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             record.Accuracy = bestAccuracy;
                             record.Loss = 1 - bestAccuracy;
                             _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
-
-                            //_mssqlDbService.PartialUpdateTrainingAsync(record.Id, updates).GetAwaiter().GetResult();
-
                             _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
                         }).GetAwaiter().GetResult();
 
@@ -199,24 +185,19 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     }
                                     else
                                     {
-                                        //modelName = "Default_Large.edltool";
                                         throw new Exception("Invalid image size. Only Middle or Large is supported");
                                     }
                                 }
                                 else
                                 {
                                     modelName = $"{processName}.edltool";
-
                                 }
 
                                 if (!Directory.Exists(savePath))
                                 {
                                     Directory.CreateDirectory(savePath);
                                 }
-                                //instance.SaveModel(savePath + $"{processName}.edltool", adms.LocalIp, parameterData.ImageSize );
                                 string result = await instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
-                                //var admsProcess = await _mssqlDbService.GetAdmsProcess(adms.Id, processName);
-                                //var admsProcessTypeId = await _mssqlDbService.GetAdmsProcessType(admsProcessId);
                                 var admsProcess = admsProcessInfoList.Find(admsProcessInfo => admsProcessInfo["admsId"].Equals(adms.Id) && admsProcessInfo["processName"].Equals(processName));
                                 if (admsProcess == null) { 
                                     throw new Exception(modelName + " is not found in the admsProcessInfoList");
@@ -237,22 +218,46 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     };
                                     await _mssqlDbService.InsertModelRecordAsync(modelRecord);
                                 }
-                                
-                                //record.ModelName = modelName;
-                                //record.ModelPath = savePath;
                             }
                         }
+
+                        // Save confusion matrix data after training completes
+                        if (parameterData.Categories != null && parameterData.Categories.Length > 0)
+                        {
+                            _mssqlDbService.InsertLogAsync("Saving confusion matrix data", LogLevel.Information).GetAwaiter().GetResult();
+                            
+                            // Include OK label in the categories
+                            var allCategories = new List<string>(parameterData.Categories) { "OK" };
+                            
+                            // Generate and save confusion matrix data
+                            foreach (string trueLabel in allCategories)
+                            {
+                                string trueLabelUpper = trueLabel.ToUpper();
+                                
+                                foreach (string predictedLabel in allCategories)
+                                {
+                                    string predictedLabelUpper = predictedLabel.ToUpper();
+                                    
+                                    uint count = instance.GetConfusion(trueLabelUpper, predictedLabelUpper);
+                                    _mssqlDbService.SaveConfusionMatrixAsync(record.Id, trueLabelUpper, predictedLabelUpper, count)
+                                        .GetAwaiter().GetResult();
+                                    
+                                    _mssqlDbService.InsertLogAsync(
+                                        $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}", 
+                                        LogLevel.Debug).GetAwaiter().GetResult();
+                                }
+                            }
+                            
+                            _mssqlDbService.InsertLogAsync("Confusion matrix data saved successfully", LogLevel.Information)
+                                .GetAwaiter().GetResult();
+                        }
+
                         record.Status = TrainingStatus.Completed;
                         record.EndTime = DateTime.Now;
                         record.Progress = 1;
                         _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
 
                         _mssqlDbService.InsertLogAsync("Model training finished", LogLevel.Information).GetAwaiter().GetResult();
-                    //    _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object>
-                    //{
-                    //    { "Status", TrainingStatus.Completed },
-                    //    { "EndTime" , DateTime.Now }
-                    //}).GetAwaiter().GetResult();
 
                         Dictionary<string, float> trainingResults = instance.GetTrainingResult();
 
@@ -267,7 +272,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         instance.StopTraining();
                         SingletonAiDuo.Reset(parameterData.ImageSize);
                         ToolStatusManager.SetProcessRunning(false);
-
                     }
                     catch (Exception e)
                     {
@@ -377,33 +381,87 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         var confusionMatrix = instance.GetConfusion(trueLabel, predictedLabel);
         return Ok(confusionMatrix);
     }
-    //[HttpGet("classify/{imageSize}")]
-    //public IActionResult Classify([FromBody] string[] imagePaths, [FromRoute] ImageSize imageSize) =>
-    //    //Console.WriteLine($"ImagePaths: {imagePaths}");
-    //    //var instance = SingletonAiDuo.GetInstance(imageSize);
-    //    //if(instance == null)
-    //    //{
-    //    //    return BadRequest("Invalid image size.");
-    //    //}
-    //    //instance.Classify(imagePaths);
-    //    Ok("OK");
 
-    //[HttpGet("save/{imageSize}")]
-    //public async Task<IActionResult> SaveModel([FromRoute] ImageSize imageSize, [FromQuery] string modelFilePath, [FromQuery] string settingsFilePath)
-    //{
-    //    try
-    //    {
-    //        var instance = SingletonAiDuo.GetInstance(imageSize);
-    //        await instance.SaveModel(modelFilePath, );
-    //        //instance.SaveSettings(settingsFilePath);
-    //        return Ok("OK");
-    //    }
-    //    catch (Exception e)
-    //    {
-    //        Console.WriteLine(e);
-    //        return BadRequest(e.Message);
-    //    }
-    //}
+    // Add a new endpoint to save all confusion matrix data for a training record
+    [HttpPost("saveConfusionMatrix/{trainingRecordId}")]
+    [AuthorizeByRole(UserRoleType.Operator, UserRoleType.Manager, UserRoleType.PROCEngineer, UserRoleType.ServiceEngineer)]
+    public async Task<IActionResult> SaveConfusionMatrix([FromRoute] int trainingRecordId, [FromBody] string[] categories)
+    {
+        try
+        {
+            await _mssqlDbService.InsertLogAsync("Saving confusion matrix for training record " + trainingRecordId, LogLevel.Information);
+            
+            var instance = SingletonAiDuo.GetInstance(_recordId == trainingRecordId ? 
+                await GetImageSizeFromTrainingRecord(trainingRecordId) : 
+                ImageSize.Middle); // Default to Middle if not current training
+            
+            if (instance == null)
+            {
+                return BadRequest("Training instance not available");
+            }
+            
+            // Include OK label in the categories
+            var allCategories = new List<string>(categories) { "OK" };
+            
+            // Generate and save confusion matrix data
+            foreach (string trueLabel in allCategories)
+            {
+                string trueLabelUpper = trueLabel.ToUpper();
+                
+                foreach (string predictedLabel in allCategories)
+                {
+                    string predictedLabelUpper = predictedLabel.ToUpper();
+                    
+                    uint count = instance.GetConfusion(trueLabelUpper, predictedLabelUpper);
+                    await _mssqlDbService.SaveConfusionMatrixAsync(trainingRecordId, trueLabelUpper, predictedLabelUpper, count);
+                    
+                    await _mssqlDbService.InsertLogAsync(
+                        $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}", 
+                        LogLevel.Debug);
+                }
+            }
+            
+            return Ok(new { Message = "Confusion matrix data saved successfully" });
+        }
+        catch (Exception ex)
+        {
+            await _mssqlDbService.InsertLogAsync("Error saving confusion matrix: " + ex.Message, LogLevel.Error);
+            return StatusCode(500, "Error saving confusion matrix: " + ex.Message);
+        }
+    }
+    
+    // Add a new endpoint to retrieve confusion matrix data for a training record
+    [HttpGet("getConfusionMatrix/{trainingRecordId}")]
+    public async Task<IActionResult> GetConfusionMatrix([FromRoute] int trainingRecordId)
+    {
+        try
+        {
+            var matrices = await _mssqlDbService.GetConfusionMatricesAsync(trainingRecordId);
+            return Ok(matrices);
+        }
+        catch (Exception ex)
+        {
+            await _mssqlDbService.InsertLogAsync("Error retrieving confusion matrix: " + ex.Message, LogLevel.Error);
+            return StatusCode(500, "Error retrieving confusion matrix: " + ex.Message);
+        }
+    }
+    
+    [NonAction]
+    private async Task<ImageSize> GetImageSizeFromTrainingRecord(int trainingRecordId)
+    {
+        try
+        {
+            // Use the existing mssqlDbService to fetch the training record
+            var context = new DlServerContext(_mssqlDbService.GetDbContextOptions(), _configuration);
+            var record = await context.TrainingRecords.FindAsync(trainingRecordId);
+            return record != null ? (ImageSize)record.ImageSize : ImageSize.Middle;
+        }
+        catch (Exception ex)
+        {
+            await _mssqlDbService.InsertLogAsync($"Error getting image size: {ex.Message}", LogLevel.Error);
+            return ImageSize.Middle; // Default to middle on error
+        }
+    }
 
     [HttpGet("load/{imageSize}")]
     public IActionResult LoadModel([FromRoute] ImageSize imageSize, [FromQuery] string modelFilePath, [FromQuery] string settingsFilePath)

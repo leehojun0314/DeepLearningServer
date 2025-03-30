@@ -17,7 +17,7 @@ namespace DeepLearningServer.Services
             _configuration = configuration;
         }
 
-        private DbContextOptions<DlServerContext> GetDbContextOptions()
+        public DbContextOptions<DlServerContext> GetDbContextOptions()
         {
             var optionsBuilder = new DbContextOptionsBuilder<DlServerContext>();
             optionsBuilder.UseSqlServer(_dbSettings.DefaultConnection);
@@ -229,5 +229,31 @@ namespace DeepLearningServer.Services
             await context.SaveChangesAsync();
         }
 
+        // Add new method for saving confusion matrix data
+        public async Task SaveConfusionMatrixAsync(int trainingRecordId, string trueLabel, string predictedLabel, uint count)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            
+            var confusionMatrix = new ConfusionMatrix
+            {
+                TrainingRecordId = trainingRecordId,
+                TrueLabel = trueLabel,
+                PredictedLabel = predictedLabel,
+                Count = count,
+                CreatedAt = DateTime.Now
+            };
+            
+            context.ConfusionMatrices.Add(confusionMatrix);
+            await context.SaveChangesAsync();
+        }
+        
+        // Add method to get confusion matrix for a training record
+        public async Task<List<ConfusionMatrix>> GetConfusionMatricesAsync(int trainingRecordId)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            return await context.ConfusionMatrices
+                .Where(cm => cm.TrainingRecordId == trainingRecordId)
+                .ToListAsync();
+        }
     }
 }
