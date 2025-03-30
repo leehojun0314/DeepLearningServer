@@ -304,7 +304,6 @@ public class TrainingAi
         var weightedError = metrics.GetWeightedError(dataset);
         Console.WriteLine($"weighted currentAccuracy: {weightedAccuracy}");
         Console.WriteLine($"weighted error: {weightedError}");
-        metrics.GetLabelAccuracy("BURST");
         // var okAccuracy = metrics.GetLabelAccuracy("OK");
         // var okError = metrics.GetLabelError("OK");
         var metricsJson = JsonExtensions.ToJson(metrics);
@@ -338,11 +337,19 @@ public class TrainingAi
             Console.WriteLine($"label currentAccuracy: {metrics.GetLabelAccuracy(upperCategory)}");
             dictionary.Add(category.ToLower() + "Accuracy", metrics.GetLabelAccuracy(upperCategory));
             dictionary.Add(category.ToLower() + "Error", metrics.GetLabelError(upperCategory));
+            
         }
 
         return dictionary;
     }
+    public uint GetConfusion(string trueClass, string predictedClass)
+    {
+        if(classifier == null) throw new Exception("The classifier is null");
+        var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
 
+        return metrics.GetConfusion(trueClass, predictedClass);
+    }
+    
 
     public void DisposeTool()
     {

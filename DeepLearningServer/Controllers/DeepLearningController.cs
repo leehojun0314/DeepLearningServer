@@ -366,6 +366,17 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         return Ok("The tool disposed successfully");
     }
 
+    [HttpGet("confusion/{imageSize}")]
+    public IActionResult GetConfusionMatrix([FromRoute] ImageSize imageSize, [FromRoute] string trueLabel, [FromRoute] string predictedLabel)
+    {
+        var instance = SingletonAiDuo.GetInstance(imageSize);
+        if (instance == null)
+        {
+            return BadRequest("The tool is null");
+        }
+        var confusionMatrix = instance.GetConfusion(trueLabel, predictedLabel);
+        return Ok(confusionMatrix);
+    }
     //[HttpGet("classify/{imageSize}")]
     //public IActionResult Classify([FromBody] string[] imagePaths, [FromRoute] ImageSize imageSize) =>
     //    //Console.WriteLine($"ImagePaths: {imagePaths}");
