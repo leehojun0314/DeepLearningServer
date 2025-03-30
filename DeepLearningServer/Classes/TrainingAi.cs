@@ -316,10 +316,19 @@ public class TrainingAi
         Console.WriteLine("flag 1");
         dictionary.Add("weightedError", metrics.GetWeightedError(dataset));
         Console.WriteLine("flag 2");
+        try
+        {
+            dictionary.Add("okAccuracy", metrics.GetLabelAccuracy("OK"));
+            dictionary.Add("okError", metrics.GetLabelError("OK"));
 
-        dictionary.Add("okAccuracy", metrics.GetLabelAccuracy("OK"));
+        }
+        catch(Exception error)
+        {
+            Console.WriteLine($"Error getting ok accuracy: {error.Message}");
+        }
+
         Console.WriteLine("flag 3");
-        dictionary.Add("okError", metrics.GetLabelError("OK"));
+        
         Console.WriteLine("flag 4");
         if (categories == null) return dictionary;
         foreach (string category in categories)
