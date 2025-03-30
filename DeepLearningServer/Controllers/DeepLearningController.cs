@@ -238,13 +238,35 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 {
                                     string predictedLabelUpper = predictedLabel.ToUpper();
                                     
-                                    uint count = instance.GetConfusion(trueLabelUpper, predictedLabelUpper);
-                                    _mssqlDbService.SaveConfusionMatrixAsync(record.Id, trueLabelUpper, predictedLabelUpper, count)
-                                        .GetAwaiter().GetResult();
-                                    
-                                    _mssqlDbService.InsertLogAsync(
-                                        $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}", 
-                                        LogLevel.Debug).GetAwaiter().GetResult();
+                                    try
+                                    {
+                                        // Use the safe version of GetConfusion that won't throw exceptions
+                                        uint count = instance.GetConfusionSafe(trueLabelUpper, predictedLabelUpper);
+                                        
+                                        // Only save if count is greater than 0 (optional)
+                                        if (count > 0)
+                                        {
+                                            _mssqlDbService.SaveConfusionMatrixAsync(record.Id, trueLabelUpper, predictedLabelUpper, count)
+                                                .GetAwaiter().GetResult();
+                                            
+                                            _mssqlDbService.InsertLogAsync(
+                                                $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}", 
+                                                LogLevel.Debug).GetAwaiter().GetResult();
+                                        }
+                                        else
+                                        {
+                                            _mssqlDbService.InsertLogAsync(
+                                                $"Skipped confusion matrix with zero count: true={trueLabelUpper}, predicted={predictedLabelUpper}", 
+                                                LogLevel.Debug).GetAwaiter().GetResult();
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        // Log the error but continue processing other categories
+                                        _mssqlDbService.InsertLogAsync(
+                                            $"Error getting confusion data for true={trueLabelUpper}, predicted={predictedLabelUpper}: {ex.Message}", 
+                                            LogLevel.Warning).GetAwaiter().GetResult();
+                                    }
                                 }
                             }
                             
@@ -371,15 +393,25 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     }
 
     [HttpGet("confusion/{imageSize}/{trueLabel}/{predictedLabel}")]
-    public IActionResult GetConfusionMatrix([FromRoute] ImageSize imageSize, [FromRoute] string trueLabel, [FromRoute] string predictedLabel)
+    public async Task<IActionResult> GetConfusionMatrix([FromRoute] ImageSize imageSize, [FromRoute] string trueLabel, [FromRoute] string predictedLabel)
     {
-        var instance = SingletonAiDuo.GetInstance(imageSize);
-        if (instance == null)
+        try
         {
-            return BadRequest("The tool is null");
+            var instance = SingletonAiDuo.GetInstance(imageSize);
+            if (instance == null)
+            {
+                return BadRequest("The tool is null");
+            }
+            
+            // Use the safe version that won't throw exceptions
+            var confusionMatrix = instance.GetConfusionSafe(trueLabel, predictedLabel);
+            return Ok(confusionMatrix);
         }
-        var confusionMatrix = instance.GetConfusion(trueLabel, predictedLabel);
-        return Ok(confusionMatrix);
+        catch (Exception ex)
+        {
+            await _mssqlDbService.InsertLogAsync($"Error getting confusion data for true={trueLabel}, predicted={predictedLabel}: {ex.Message}", LogLevel.Warning);
+            return StatusCode(500, $"Error getting confusion data: {ex.Message}");
+        }
     }
 
     // Add a new endpoint to save all confusion matrix data for a training record
@@ -402,6 +434,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             
             // Include OK label in the categories
             var allCategories = new List<string>(categories) { "OK" };
+            int successCount = 0;
+            int errorCount = 0;
             
             // Generate and save confusion matrix data
             foreach (string trueLabel in allCategories)
@@ -412,16 +446,45 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 {
                     string predictedLabelUpper = predictedLabel.ToUpper();
                     
-                    uint count = instance.GetConfusion(trueLabelUpper, predictedLabelUpper);
-                    await _mssqlDbService.SaveConfusionMatrixAsync(trainingRecordId, trueLabelUpper, predictedLabelUpper, count);
-                    
-                    await _mssqlDbService.InsertLogAsync(
-                        $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}", 
-                        LogLevel.Debug);
+                    try
+                    {
+                        // Use the safe version of GetConfusion that won't throw exceptions
+                        uint count = instance.GetConfusionSafe(trueLabelUpper, predictedLabelUpper);
+                        
+                        // Only save if count is greater than 0 (optional)
+                        if (count > 0)
+                        {
+                            await _mssqlDbService.SaveConfusionMatrixAsync(trainingRecordId, trueLabelUpper, predictedLabelUpper, count);
+                            
+                            await _mssqlDbService.InsertLogAsync(
+                                $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}", 
+                                LogLevel.Debug);
+                            successCount++;
+                        }
+                        else
+                        {
+                            await _mssqlDbService.InsertLogAsync(
+                                $"Skipped confusion matrix with zero count: true={trueLabelUpper}, predicted={predictedLabelUpper}", 
+                                LogLevel.Debug);
+                            errorCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log the error but continue processing other categories
+                        await _mssqlDbService.InsertLogAsync(
+                            $"Error getting confusion data for true={trueLabelUpper}, predicted={predictedLabelUpper}: {ex.Message}", 
+                            LogLevel.Warning);
+                        errorCount++;
+                    }
                 }
             }
             
-            return Ok(new { Message = "Confusion matrix data saved successfully" });
+            return Ok(new { 
+                Message = "Confusion matrix data processing completed", 
+                SuccessCount = successCount,
+                ErrorCount = errorCount
+            });
         }
         catch (Exception ex)
         {

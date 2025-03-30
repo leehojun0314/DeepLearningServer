@@ -356,6 +356,21 @@ public class TrainingAi
         return metrics.GetConfusion(trueClass, predictedClass);
     }
     
+    // Add a safe version of GetConfusion that returns 0 instead of throwing an exception
+    public uint GetConfusionSafe(string trueClass, string predictedClass)
+    {
+        try
+        {
+            if (classifier == null) return 0;
+            var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
+            return metrics.GetConfusion(trueClass, predictedClass);
+        }
+        catch (Exception)
+        {
+            // Return 0 counts for any missing categories instead of throwing an exception
+            return 0;
+        }
+    }
 
     public void DisposeTool()
     {
