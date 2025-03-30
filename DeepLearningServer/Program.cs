@@ -96,7 +96,7 @@ public class Program
                     new string[] {}
                 }
             });
-            options.SchemaFilter<EnumSchemaFilter>();
+            //options.SchemaFilter<EnumSchemaFilter>();
 
         });
         builder.WebHost.ConfigureKestrel(options =>
