@@ -366,7 +366,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         return Ok("The tool disposed successfully");
     }
 
-    [HttpGet("confusion/{imageSize}")]
+    [HttpGet("confusion/{imageSize}/{trueLabel}/{predictedLabel}")]
     public IActionResult GetConfusionMatrix([FromRoute] ImageSize imageSize, [FromRoute] string trueLabel, [FromRoute] string predictedLabel)
     {
         var instance = SingletonAiDuo.GetInstance(imageSize);
