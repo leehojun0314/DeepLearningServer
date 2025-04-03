@@ -363,6 +363,7 @@ public class TrainingAi
         {
             if (classifier == null) return 0;
             var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
+            
             return metrics.GetConfusion(trueClass, predictedClass);
         }
         catch (Exception)
@@ -371,7 +372,13 @@ public class TrainingAi
             return 0;
         }
     }
-
+    public void GetImageProbability(string imagePath)
+    {
+        if (classifier == null) throw new Exception("The classifier is null");
+        var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
+        
+        //metrics.
+    }
     public void DisposeTool()
     {
         classifier?.Dispose();

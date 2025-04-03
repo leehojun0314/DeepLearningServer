@@ -80,20 +80,21 @@ namespace DeepLearningServer.Controllers
                 }
                 Console.WriteLine("Creating project...");
                 // 새 프로젝트 생성
-                EDeepLearningProject project;
-                project = new EDeepLearningProject();
-                project.Type = EDeepLearningToolType.EasyClassify;
-                project.Name = "modelUpgrade";
-                project.ProjectDirectory = projectDir;
-                Console.WriteLine("Saving project...");
-                project.SaveProject();
-                Console.WriteLine("Saved project.");
-                int toolIndex = 0;
+               
                 foreach (string modelFile in modelFiles)
                 {
                     string fileName = Path.GetFileName(modelFile);
+                    EDeepLearningProject project;
+                    project = new EDeepLearningProject();
                     try
                     {
+                        project.Type = EDeepLearningToolType.EasyClassify;
+                        project.Name = "modelUpgrade";
+                        project.ProjectDirectory = projectDir;
+                        Console.WriteLine("Saving project...");
+                        project.SaveProject();
+                        Console.WriteLine("Saved project.");
+                        int toolIndex = 0;
                         Console.WriteLine("Upgrading tool: " + modelFile);
 
                         //project.Save(projectDir);
@@ -107,7 +108,7 @@ namespace DeepLearningServer.Controllers
                         Console.WriteLine("New model path: " + newModelPath);
                         EDeepLearningTool newTool = project.GetToolCopy(toolIndex);
 
-                        toolIndex++;
+                        //toolIndex++;
                         Console.WriteLine("Saving model...");
                         //newTool.SaveTrainingModel(newModelPath);
 
@@ -118,6 +119,11 @@ namespace DeepLearningServer.Controllers
                     {
                         Console.WriteLine($"Error on upgrading model. {modelFile}, Error: {ex.Message}");
                         throw new Exception(ex.Message);
+                    }
+                    finally
+                    {
+                        project.Dispose();
+                        Directory.Delete(projectDir, true);
                     }
                 }
 
