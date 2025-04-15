@@ -4,6 +4,9 @@ using Euresys.Open_eVision.EasyDeepLearning;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
+/// <summary>
+/// 딥러닝 모델 추론 기능을 제공하는 컨트롤러입니다.
+/// </summary>
 namespace DeepLearningServer.Controllers
 {
     [Route("api/[controller]")]
@@ -39,6 +42,17 @@ namespace DeepLearningServer.Controllers
         //    return Ok("Inference Controller");
         //}
 
+        /// <summary>
+        /// 단일 이미지를 모델을 사용하여 분류합니다.
+        /// </summary>
+        /// <param name="inferenceDto">
+        /// 추론을 위한 데이터:
+        /// - ModelPath: 추론에 사용할 모델 파일 경로
+        /// - ImagePath: 분류할 단일 이미지 파일 경로
+        /// </param>
+        /// <returns>최적 레이블과 확률 값 반환</returns>
+        /// <response code="200">추론 성공</response>
+        /// <response code="400">모델 로드 또는 추론 과정에서 오류 발생</response>
         [HttpPost("single")]
         public IActionResult PostSingle([FromBody] InferenceDto inferenceDto)
         {
@@ -65,6 +79,17 @@ namespace DeepLearningServer.Controllers
             return Ok("Inference Controller");
         }
 
+        /// <summary>
+        /// 여러 이미지를 모델을 사용하여 일괄 분류합니다.
+        /// </summary>
+        /// <param name="inferenceDto">
+        /// 추론을 위한 데이터:
+        /// - ModelPath: 추론에 사용할 모델 파일 경로
+        /// - ImagePaths: 분류할 다중 이미지 파일 경로 배열
+        /// </param>
+        /// <returns>각 이미지별 분류 결과와 레이블별 확률값 목록 반환</returns>
+        /// <response code="200">일괄 추론 성공</response>
+        /// <response code="400">모델 로드 또는 추론 과정에서 오류 발생</response>
         [HttpPost("multi")]
         public IActionResult PostMulti([FromBody] MultiInferenceDto inferenceDto)
         {

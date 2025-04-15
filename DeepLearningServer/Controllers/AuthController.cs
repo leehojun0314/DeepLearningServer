@@ -7,6 +7,10 @@ using DeepLearningServer.Models;
 using Microsoft.AspNetCore.Identity.Data;
 using DeepLearningServer.Enums;
 using System.ComponentModel;
+
+/// <summary>
+/// 사용자 인증과 관련된 기능을 제공하는 컨트롤러입니다.
+/// </summary>
 namespace DeepLearningServer.Controllers;
 [Route("api/[controller]")]
 [ApiController]
@@ -20,6 +24,19 @@ public class AuthController : ControllerBase
         _context = context;
         _configuration = configuration;
     }
+
+    /// <summary>
+    /// 새로운 사용자를 등록합니다.
+    /// </summary>
+    /// <param name="request">
+    /// 사용자 등록 정보:
+    /// - Username: 사용자 아이디 (중복 불가)
+    /// - Password: 사용자 비밀번호
+    /// - Email: 사용자 이메일 (중복 불가)
+    /// </param>
+    /// <returns>사용자 등록 성공 메시지</returns>
+    /// <response code="200">등록 성공</response>
+    /// <response code="400">사용자명 또는 이메일이 이미 존재함</response>
     [HttpPost("register")]
     public IActionResult Register([FromBody] RegisterRequest request)
     {
@@ -47,6 +64,18 @@ public class AuthController : ControllerBase
 
         return Ok(new { message = "User registered successfully" });
     }
+
+    /// <summary>
+    /// 사용자 로그인을 처리하고 JWT 토큰을 발급합니다.
+    /// </summary>
+    /// <param name="loginRequest">
+    /// 로그인 정보:
+    /// - Username: 사용자 아이디
+    /// - Password: 사용자 비밀번호
+    /// </param>
+    /// <returns>JWT 인증 토큰</returns>
+    /// <response code="200">로그인 성공 및 토큰 발급</response>
+    /// <response code="401">잘못된 사용자 자격 증명</response>
     [HttpPost("login")]
     public IActionResult Login([FromBody] LoginRequest loginRequest)
     {
@@ -73,7 +102,7 @@ public class AuthController : ControllerBase
             .Where(ur => ur.UserId == user.Id)
             .Select(ur => ur.Role.Name)
             .ToHashSet(); // 🚀 HashSet으로 변환하여 검색 속도 향상
-        foreach(var userRole in userRoles)
+        foreach (var userRole in userRoles)
         {
             Console.WriteLine($"user role: {userRole}");
         }
@@ -82,7 +111,7 @@ public class AuthController : ControllerBase
             .Where(rp => userRoles.Contains(rp.Role.Name))
             .Select(rp => rp.Permission.Name)
             .ToList();
-        foreach(var userPermission in userPermissions)
+        foreach (var userPermission in userPermissions)
         {
             Console.WriteLine($"user permission: {userPermission}");
         }
@@ -107,17 +136,42 @@ public class AuthController : ControllerBase
 
 }
 
+/// <summary>
+/// 로그인 요청 모델입니다.
+/// </summary>
 public class LoginRequest
 {
+    /// <summary>
+    /// 사용자 아이디
+    /// </summary>
     [DefaultValue("ADMS")]
     public string Username { get; set; }
+
+    /// <summary>
+    /// 사용자 비밀번호
+    /// </summary>
     [DefaultValue("ADMS007")]
     public string Password { get; set; }
 }
+
+/// <summary>
+/// 사용자 등록 요청 모델입니다.
+/// </summary>
 public class RegisterRequest
 {
+    /// <summary>
+    /// 등록할 사용자 아이디 (고유값)
+    /// </summary>
     public string Username { get; set; }
+
+    /// <summary>
+    /// 등록할 사용자 비밀번호
+    /// </summary>
     public string Password { get; set; }
+
+    /// <summary>
+    /// 등록할 사용자 이메일 (고유값)
+    /// </summary>
     public string Email { get; set; }
     //public UserRoleType Role { get; set; } // Enum 값으로 역할을 입력받음
 }

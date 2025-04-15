@@ -21,7 +21,7 @@ public class Program
 
         var builder = WebApplication.CreateBuilder(args);
 
-        // È¯°æ º¯¼ö Ãß°¡ µî ¼³Á¤
+        // È¯ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ß°ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         builder.Configuration.AddEnvironmentVariables();
         builder.Services.Configure<ServerSettings>(builder.Configuration.GetSection("ServerSettings"));
         //builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("DatabaseSettings"));
@@ -31,7 +31,7 @@ public class Program
 
         var connectionString = builder.Configuration.GetSection("ConnectionStrings:DefaultConnection").Value;
 
-        // MSSQL µ¥ÀÌÅÍº£ÀÌ½º ¿¬°á ¼³Á¤
+        // MSSQL ï¿½ï¿½ï¿½ï¿½ï¿½Íºï¿½ï¿½Ì½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         builder.Services.AddDbContext<DlServerContext>(options =>
         {
             var dbSettings = builder.Configuration.GetSection("ConnectionStrings").Get<SqlDbSettings>();
@@ -98,6 +98,9 @@ public class Program
             });
             //options.SchemaFilter<EnumSchemaFilter>();
 
+            // XML ì£¼ì„ íŒŒì¼ ê²½ë¡œ ì„¤ì •
+            var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+            options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
         });
         builder.WebHost.ConfigureKestrel(options =>
         {
@@ -105,7 +108,7 @@ public class Program
             Console.WriteLine("PORT" + port);
             options.ListenAnyIP(port, listenOptions =>
             {
-                // ÃÖ´ë ¿äÃ» Å©±â¸¦ 1000MB·Î ¼³Á¤ (¿øÇÏ´Â Å©±â·Î Á¶Á¤ °¡´É)
+                // ï¿½Ö´ï¿½ ï¿½ï¿½Ã» Å©ï¿½â¸¦ 1000MBï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½Ï´ï¿½ Å©ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½)
                 listenOptions.KestrelServerOptions.Limits.MaxRequestBodySize = 1000 * 1024 * 1024;
             });
             //int port = 8082
@@ -119,9 +122,9 @@ public class Program
             var dbContext = scope.ServiceProvider.GetRequiredService<DlServerContext>();
             try
             {
-                dbContext.Database.Migrate(); // ÀÚµ¿ ¸¶ÀÌ±×·¹ÀÌ¼Ç ¼öÇà
-           
-               
+                dbContext.Database.Migrate(); // ï¿½Úµï¿½ ï¿½ï¿½ï¿½Ì±×·ï¿½ï¿½Ì¼ï¿½ ï¿½ï¿½ï¿½ï¿½
+
+
             }
             catch (Exception error)
             {

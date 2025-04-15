@@ -6,8 +6,9 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Options;
 using SharpCompress.Common;
 
-// For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
-
+/// <summary>
+/// 딥러닝 모델 관리 기능을 제공하는 컨트롤러입니다.
+/// </summary>
 namespace DeepLearningServer.Controllers
 {
     [Route("api/[controller]")]
@@ -16,9 +17,20 @@ namespace DeepLearningServer.Controllers
     {
         private readonly ServerSettings _serverSettings = serverSettings.Value;
 
+        /// <summary>
+        /// 딥러닝 모델 파일을 서버에 업로드합니다.
+        /// </summary>
+        /// <param name="uploadModelDto">
+        /// 모델 업로드 데이터:
+        /// - ModelPath: 서버에 저장될 모델 경로 (상대 경로)
+        /// - File: 업로드할 모델 파일
+        /// </param>
+        /// <returns>업로드 성공 메시지와 저장된 파일 경로</returns>
+        /// <response code="200">모델 업로드 성공</response>
+        /// <response code="400">파일이 비어있거나 경로가 지정되지 않음</response>
+        /// <response code="500">서버 내부 오류</response>
         [HttpPost("upload")]
         [Consumes("multipart/form-data")]
-
         public IActionResult Post([FromForm] UploadModelDto uploadModelDto)
         {
             try
@@ -54,6 +66,19 @@ namespace DeepLearningServer.Controllers
                 return StatusCode(500, new { Message = "Error on uploading model", Error = ex.Message });
             }
         }
+
+        /// <summary>
+        /// 기존 모델을 최신 버전으로 마이그레이션합니다.
+        /// </summary>
+        /// <param name="modelMigrations">
+        /// 모델 마이그레이션 데이터:
+        /// - OldModelsPath: 기존 모델 파일이 저장된 폴더 경로
+        /// - NewModelsPath: 업그레이드된 모델을 저장할 폴더 경로
+        /// - ProjectDir: 임시 프로젝트 폴더 경로 (마이그레이션 중 사용됨)
+        /// </param>
+        /// <returns>마이그레이션 완료 메시지와 업데이트된 파일 수</returns>
+        /// <response code="200">모델 마이그레이션 성공</response>
+        /// <response code="500">마이그레이션 중 오류 발생</response>
         [HttpPost("migrate")]
         public IActionResult Post([FromBody] MigrationDto modelMigrations)
         {
@@ -80,7 +105,7 @@ namespace DeepLearningServer.Controllers
                 }
                 Console.WriteLine("Creating project...");
                 // 새 프로젝트 생성
-               
+
                 foreach (string modelFile in modelFiles)
                 {
                     string fileName = Path.GetFileName(modelFile);
