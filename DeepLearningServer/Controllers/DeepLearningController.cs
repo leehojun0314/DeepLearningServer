@@ -222,59 +222,45 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                         // ✅ 여러 개의 프로세스에 대한 모델 저장
                         string timeStamp = DateTime.Now.ToString("yyyyMMdd");
-                        foreach (var adms in admsList)
+                        
+                        // ✅ admsProcessInfoList를 기반으로 모델 저장 (중복 제거 및 정확한 매핑)
+                        foreach (var admsProcessInfo in admsProcessInfoList)
                         {
-                            foreach (var processName in processNames)
-                            {
-                                //string savePath = $"{_serverSettings.ModelDirectory}\\{adms.Name}\\{processName}\\{timeStamp}\\";
-                                string savePath = $"{_serverSettings.ModelDirectory}\\{adms.Name}\\{processName}\\";
-                                string modelName;
-                                if (parameterData.IsDefaultModel)
-                                {
-                                    if (parameterData.ImageSize == ImageSize.Middle)
-                                    {
-                                        modelName = "Default_Middle.edltool";
-                                    }
-                                    else if (parameterData.ImageSize == ImageSize.Large)
-                                    {
-                                        modelName = "Default_Large.edltool";
-                                    }
-                                    else
-                                    {
-                                        throw new Exception("Invalid image size. Only Middle or Large is supported");
-                                    }
-                                }
-                                else
-                                {
-                                    modelName = $"{processName}.edltool";
-                                }
+                            if (!admsProcessInfo.TryGetValue("admsId", out object admsIdValue) || !(admsIdValue is int admsId)) continue;
+                            if (!admsProcessInfo.TryGetValue("processId", out object processIdValue) || !(processIdValue is int processId)) continue;
+                            if (!admsProcessInfo.TryGetValue("processName", out object processNameValue) || !(processNameValue is string processName)) continue;
 
-                                if (!Directory.Exists(savePath))
+                            var adms = admsList.Find(a => a.Id == admsId);
+                            if (adms == null) continue;
+
+                            // ✅ 새로운 경로 구조: ImageSize에 따라 LARGE 또는 MIDDLE 폴더 사용
+                            string sizeFolder = parameterData.ImageSize == ImageSize.Large ? "LARGE" : "MIDDLE";
+                            string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\EVALUATION\\{adms.Name}\\";
+                            
+                            // ✅ 모델명을 ProcessId.edltool로 변경
+                            string modelName = $"{processId}.edltool";
+
+                            if (!Directory.Exists(savePath))
+                            {
+                                Directory.CreateDirectory(savePath);
+                            }
+
+                            string result = await instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
+                            
+                            if (admsProcessInfo.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
+                            {
+                                AdmsProcessType admsProcessType = await _mssqlDbService.GetAdmsProcessType(intAdmsProcessId);
+                                var modelRecord = new ModelRecord
                                 {
-                                    Directory.CreateDirectory(savePath);
-                                }
-                                string result = await instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
-                                var admsProcess = admsProcessInfoList.Find(admsProcessInfo => admsProcessInfo["admsId"].Equals(adms.Id) && admsProcessInfo["processName"].Equals(processName));
-                                if (admsProcess == null)
-                                {
-                                    throw new Exception(modelName + " is not found in the admsProcessInfoList");
-                                }
-                                AdmsProcessType admsProcessType;
-                                if (admsProcess.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
-                                {
-                                    admsProcessType = await _mssqlDbService.GetAdmsProcessType(intAdmsProcessId);
-                                    var modelRecord = new ModelRecord
-                                    {
-                                        ModelName = modelName,
-                                        AdmsProcessTypeId = admsProcessType.Id,
-                                        TrainingRecordId = record.Id,
-                                        Status = result,
-                                        ServerPath = savePath + modelName,
-                                        ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
-                                        CreatedAt = DateTime.Now
-                                    };
-                                    await _mssqlDbService.InsertModelRecordAsync(modelRecord);
-                                }
+                                    ModelName = modelName,
+                                    AdmsProcessTypeId = admsProcessType.Id,
+                                    TrainingRecordId = record.Id,
+                                    Status = result,
+                                    ServerPath = savePath + modelName,
+                                    ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
+                                    CreatedAt = DateTime.Now
+                                };
+                                await _mssqlDbService.InsertModelRecordAsync(modelRecord);
                             }
                         }
 

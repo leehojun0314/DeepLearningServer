@@ -8,11 +8,14 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
-using DeepLearningServer.Swagger;
+
+// 시딩 스크립트 실행 메서드
+
+
 public class Program
 {
     [STAThread]
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         //Console.WriteLine("Checking license..");
         //bool hasLicense = Easy.CheckLicense(Euresys.Open_eVision.LicenseFeatures.Features.EasyClassify);
@@ -122,18 +125,42 @@ public class Program
             var dbContext = scope.ServiceProvider.GetRequiredService<DlServerContext>();
             try
             {
-                dbContext.Database.Migrate(); // �ڵ� ���̱׷��̼� ����
+                Console.WriteLine("Starting database migration...");
+                dbContext.Database.Migrate(); // 자동 마이그레이션 실행
+                Console.WriteLine("Database migration completed successfully.");
 
-
+                // 시딩 작업 실행
+                Console.WriteLine("Starting database seeding...");
+                await ExecuteSeedScript(dbContext);
+                Console.WriteLine("Database seeding completed successfully.");
             }
             catch (Exception error)
             {
-                Console.WriteLine("Error on database migration");
+                Console.WriteLine($"Error during database initialization: {error.Message}");
             }
         }
         //app.MapOpenApi();
         app.MapGet("/", () =>
-            "Greetings from deep learning server " + DateTime.Now.ToLongTimeString());
+        {
+            string version = "Unknown";
+            try
+            {
+                version = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "version.txt")).Trim();
+            }
+            catch (Exception)
+            {
+                // If version.txt is not found or cannot be read, keep default "Unknown"
+            }
+
+            return new
+            {
+                Status = "OK",
+                Message = "ADMS DeepLearning Server is running",
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Version = version,
+                Environment = app.Environment.EnvironmentName
+            };
+        });
         app.UseMiddleware<GlobalExceptionMiddleware>();
         ToolStatusManager.SetProcessRunning(false);
         app.UseSwagger();
@@ -145,5 +172,44 @@ public class Program
         app.MapControllers();
 
         app.Run();
+    }
+    static async Task ExecuteSeedScript(DlServerContext dbContext)
+    {
+        try
+        {
+            string seedFilePath = Path.Combine(AppContext.BaseDirectory, "seed.sql");
+
+            if (!File.Exists(seedFilePath))
+            {
+                Console.WriteLine("seed.sql file not found. Skipping seeding.");
+                return;
+            }
+
+            string seedScript = await File.ReadAllTextAsync(seedFilePath);
+
+            if (string.IsNullOrWhiteSpace(seedScript))
+            {
+                Console.WriteLine("seed.sql file is empty. Skipping seeding.");
+                return;
+            }
+
+            // SQL 스크립트를 배치로 나누어 실행 (GO 구분자 기준)
+            var batches = seedScript.Split(new[] { "\nGO\n", "\nGO\r\n", "\rGO\r", "\rGO\n" },
+                                          StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var batch in batches)
+            {
+                var trimmedBatch = batch.Trim();
+                if (!string.IsNullOrWhiteSpace(trimmedBatch))
+                {
+                    await dbContext.Database.ExecuteSqlRawAsync(trimmedBatch);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error executing seed script: {ex.Message}");
+            throw;
+        }
     }
 }

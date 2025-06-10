@@ -1,0 +1,8 @@
+﻿// This file contains commands for Entity Framework Core migrations and scaffolding.
+dotnet ef dbcontext scaffold "Name=DefaultConnection" Microsoft.EntityFrameworkCore.SqlServer -o Models --force
+
+// This command generates the DbContext and entity classes based on the existing database schema.
+dotnet ef migrations add InitialCreate
+
+// This command creates a new migration based on the current model and saves it to the Migrations folder.
+dotnet ef database update

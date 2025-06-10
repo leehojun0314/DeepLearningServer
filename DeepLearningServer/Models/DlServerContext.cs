@@ -134,7 +134,7 @@ public partial class DlServerContext : DbContext
             //entity.HasIndex(e => e.ProcessId, "IX_RecipeFiles_ProcessId");
             entity.HasIndex(e => e.AdmsProcessId, "IX_RecipeFiles_AdmsProcessId");
             entity.Property(e => e.FileName).HasMaxLength(100);
-            entity.Property(e => e.LastModified).HasColumnType("datetime");
+            entity.Property(e => e.CreatedDate).HasColumnType("datetime");
             entity.Property(e => e.FileType).HasMaxLength(50);
             //entity.HasOne(d => d.Adms).WithMany(p => p.RecipeFiles).HasForeignKey(d => d.AdmsId);
 

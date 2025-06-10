@@ -16,7 +16,7 @@ public partial class RecipeFile
 
     public int AdmsProcessId { get; set; }
 
-    public DateTime LastModified { get; set; }
+    public DateTime CreatedDate { get; set; }
 
     public virtual AdmsProcess AdmsProcess { get; set; } = null!;
 }
