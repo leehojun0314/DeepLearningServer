@@ -31,6 +31,9 @@ public class TrainingAi
     private EClassificationDataset? validationDataset;
     private readonly string[]? categories;
 
+    private string? tempImageRootDir; // 임시 이미지 루트 경로
+    private string? tempImageSessionDir; // 세션별 임시 폴더 경로
+
     #region Initialize
     public TrainingAi(TrainingDto parameterData, ServerSettings serverSettings)
     {
@@ -57,6 +60,12 @@ public class TrainingAi
     public int LoadImages(string[] processNames)
     {
         if (parameterData == null) throw new Exception("Parameter data is null");
+        // 임시 폴더 경로 준비
+        tempImageRootDir = serverSettings.TempImageDirectory;
+        string today = DateTime.Now.ToString("yyyyMMdd");
+        tempImageSessionDir = Path.Combine(tempImageRootDir, today, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempImageSessionDir);
+
         var imagePath = parameterData.ImageSize switch
         {
             ImageSize.Middle => serverSettings.MiddleImagePath,
@@ -71,95 +80,63 @@ public class TrainingAi
             {
                 var upperCategory = category.ToUpper();
                 Console.WriteLine("upper category: " + upperCategory);
-                
-                // NG/BASE 폴더 체크 및 로드
+                // 임시 카테고리 폴더 생성
+                string tempCategoryDir = Path.Combine(tempImageSessionDir, upperCategory);
+                Directory.CreateDirectory(tempCategoryDir);
+                // NG/BASE 폴더 체크 및 복사
                 string ngBasePath = imagePath + $@"\NG\BASE\{upperCategory}";
-                string ngBasePattern = ngBasePath + @"\*.jpg";
                 if (Directory.Exists(ngBasePath))
                 {
                     var ngBaseFiles = Directory.GetFiles(ngBasePath, "*.jpg", SearchOption.AllDirectories);
-                    if (ngBaseFiles.Length > 0)
+                    foreach (var file in ngBaseFiles)
                     {
-                        Console.WriteLine($"Loading {ngBaseFiles.Length} images from NG/BASE/{upperCategory}");
-                        dataset.AddImages(ngBasePattern, upperCategory);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"No images found in NG/BASE/{upperCategory}");
+                        string dest = Path.Combine(tempCategoryDir, Path.GetFileName(file));
+                        File.Copy(file, dest, true);
                     }
                 }
-                else
-                {
-                    Console.WriteLine($"Directory not found: NG/BASE/{upperCategory}");
-                }
-                
-                // NG/NEW 폴더 체크 및 로드
+                // NG/NEW 폴더 체크 및 복사
                 string ngNewPath = imagePath + $@"\NG\NEW\{upperCategory}";
-                string ngNewPattern = ngNewPath + @"\*.jpg";
                 if (Directory.Exists(ngNewPath))
                 {
                     var ngNewFiles = Directory.GetFiles(ngNewPath, "*.jpg", SearchOption.AllDirectories);
-                    if (ngNewFiles.Length > 0)
+                    foreach (var file in ngNewFiles)
                     {
-                        Console.WriteLine($"Loading {ngNewFiles.Length} images from NG/NEW/{upperCategory}");
-                        dataset.AddImages(ngNewPattern, upperCategory);
+                        string dest = Path.Combine(tempCategoryDir, Path.GetFileName(file));
+                        File.Copy(file, dest, true);
                     }
-                    else
-                    {
-                        Console.WriteLine($"No images found in NG/NEW/{upperCategory}");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"Directory not found: NG/NEW/{upperCategory}");
                 }
             }
         }
-        //Load base OK images (processed images)
+        // OK 이미지 복사 및 로드
+        int totalImages = 0;
+        if (categories != null)
+        {
+            foreach (var category in categories)
+            {
+                var upperCategory = category.ToUpper();
+                string tempCategoryDir = Path.Combine(tempImageSessionDir, upperCategory);
+                if (Directory.Exists(tempCategoryDir))
+                {
+                    var files = Directory.GetFiles(tempCategoryDir, "*.jpg", SearchOption.AllDirectories);
+                    if (files.Length > 0)
+                    {
+                        dataset.AddImages(Path.Combine(tempCategoryDir, "*.jpg"), upperCategory);
+                        totalImages += files.Length;
+                    }
+                }
+            }
+        }
         foreach (var processName in processNames)
         {
-            // OK/{processName}/BASE 폴더 체크 및 로드
-            string okBasePath = imagePath + $@"\OK\{processName}\BASE";
-            string okBasePattern = okBasePath + @"\*.jpg";
-            Console.WriteLine($"OK Base path: {okBasePath}");
-            if (Directory.Exists(okBasePath))
+            string tempOkDir = Path.Combine(tempImageSessionDir, "OK", processName);
+            if (Directory.Exists(tempOkDir))
             {
-                var okBaseFiles = Directory.GetFiles(okBasePath, "*.jpg", SearchOption.AllDirectories);
-                if (okBaseFiles.Length > 0)
+                var files = Directory.GetFiles(tempOkDir, "*.jpg", SearchOption.AllDirectories);
+                if (files.Length > 0)
                 {
-                    Console.WriteLine($"Loading {okBaseFiles.Length} images from OK/{processName}/BASE");
-                    dataset.AddImages(okBasePattern, "OK");
+                    dataset.AddImages(Path.Combine(tempOkDir, "*.jpg"), "OK");
+                    totalImages += files.Length;
                 }
-                else
-                {
-                    Console.WriteLine($"No images found in OK/{processName}/BASE");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Directory not found: OK/{processName}/BASE");
-            }
-
-            // OK/{processName}/NEW 폴더 체크 및 로드
-            string okNewPath = imagePath + $@"\OK\{processName}\NEW";
-            string okNewPattern = okNewPath + @"\*.jpg";
-            Console.WriteLine($"OK New path: {okNewPath}");
-            if (Directory.Exists(okNewPath))
-            {
-                var okNewFiles = Directory.GetFiles(okNewPath, "*.jpg", SearchOption.AllDirectories);
-                if (okNewFiles.Length > 0)
-                {
-                    Console.WriteLine($"Loading {okNewFiles.Length} images from OK/{processName}/NEW");
-                    dataset.AddImages(okNewPattern, "OK");
-                }
-                else
-                {
-                    Console.WriteLine($"No images found in OK/{processName}/NEW");
-                }
-            }
-            else
-            {
-                Console.WriteLine($"Directory not found: OK/{processName}/NEW (this is common and not an error)");
             }
         }
         var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
@@ -173,7 +150,7 @@ public class TrainingAi
         {
             throw new Exception("Error on loading images. Images not found");
         }
-        return dataset.NumImages;
+        return totalImages;
     }
     #endregion
 
@@ -228,7 +205,7 @@ public class TrainingAi
     }
 
     #endregion
-    public bool LoadPretrainedModel( ImageSize size)
+    public bool LoadPretrainedModel(ImageSize size)
     {
         if (classifier == null)
         {
@@ -274,7 +251,7 @@ public class TrainingAi
             cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
                 );
             // 동일한 Accuracy가 5번 반복되었으면 트레이닝 강제 종료
-           
+
             if (currentAccuracy == prevAccuracy)
             {
                 sameAccuracyCount++;
@@ -296,7 +273,7 @@ public class TrainingAi
             {
                 break;
             }
-            
+
         }
         // classifier.WaitForTrainingCompletion();
 
@@ -325,7 +302,7 @@ public class TrainingAi
     //{
     //    if (classifier == null) throw new Exception("The classifier is null");
     //    var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
-        
+
     //    return metrics.Accuracy;
     //}
     public Dictionary<string, float> GetTrainingResult()
@@ -355,30 +332,30 @@ public class TrainingAi
             dictionary.Add("okError", metrics.GetLabelError("OK"));
 
         }
-        catch(Exception error)
+        catch (Exception error)
         {
             Console.WriteLine($"Error getting ok accuracy: {error.Message}");
         }
 
         Console.WriteLine("flag 3");
-        
+
         Console.WriteLine("flag 4");
         if (categories == null) return dictionary;
         foreach (string category in categories)
         {
             string upperCategory = category.ToUpper();
             Console.WriteLine($"balanced currentAccuracy: {metrics.BalancedAccuracy}");
-            
+
             try
             {
                 float labelAccuracy = metrics.GetLabelAccuracy(upperCategory);
                 float labelError = metrics.GetLabelError(upperCategory);
-                
+
                 Console.WriteLine($"label currentAccuracy: {labelAccuracy}");
                 dictionary.Add(category.ToLower() + "Accuracy", labelAccuracy);
                 dictionary.Add(category.ToLower() + "Error", labelError);
-                
-                foreach(string predictedCategory in categories)
+
+                foreach (string predictedCategory in categories)
                 {
                     string upperPredictedCategory = predictedCategory.ToUpper();
                     try
@@ -405,12 +382,12 @@ public class TrainingAi
     }
     public uint GetConfusion(string trueClass, string predictedClass)
     {
-        if(classifier == null) throw new Exception("The classifier is null");
+        if (classifier == null) throw new Exception("The classifier is null");
         var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
 
         return metrics.GetConfusion(trueClass, predictedClass);
     }
-    
+
     // Add a safe version of GetConfusion that returns 0 instead of throwing an exception
     public uint GetConfusionSafe(string trueClass, string predictedClass)
     {
@@ -418,7 +395,7 @@ public class TrainingAi
         {
             if (classifier == null) return 0;
             var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
-            
+
             return metrics.GetConfusion(trueClass, predictedClass);
         }
         catch (Exception)
@@ -431,7 +408,7 @@ public class TrainingAi
     {
         if (classifier == null) throw new Exception("The classifier is null");
         var metrics = classifier.GetTrainingMetrics(classifier.BestIteration);
-        
+
         //metrics.
     }
     public void DisposeTool()
@@ -530,7 +507,7 @@ public class TrainingAi
             {
                 Directory.CreateDirectory(directoryPath);
             }
-           
+
 
             if (Directory.Exists(tempPath))
             {
@@ -555,7 +532,7 @@ public class TrainingAi
 
                 string modifiedPath = "";
                 string[] parts = localPath.Split("\\");
-                foreach(string part in parts)
+                foreach (string part in parts)
                 {
                     Console.WriteLine("part: " + part);
                     modifiedPath += part + "\\";
@@ -612,6 +589,25 @@ public class TrainingAi
     public void LoadModel(string filePath)
     {
         classifier?.LoadTrainingModel(filePath);
+    }
+
+    /// <summary>
+    /// 임시 이미지 폴더를 삭제합니다.
+    /// </summary>
+    public void CleanupTempImages()
+    {
+        if (!string.IsNullOrEmpty(tempImageSessionDir) && Directory.Exists(tempImageSessionDir))
+        {
+            try
+            {
+                Directory.Delete(tempImageSessionDir, true);
+                Console.WriteLine($"임시 이미지 폴더 삭제 완료: {tempImageSessionDir}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"임시 이미지 폴더 삭제 실패: {ex.Message}");
+            }
+        }
     }
 
     ~TrainingAi()

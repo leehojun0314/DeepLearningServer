@@ -8,4 +8,5 @@ public class ServerSettings
     public required string ModelDirectory { get; set; }
     public required string EvaluationModelDirectory { get; set; }
     public required int PORT { get; set; }
+    public required string TempImageDirectory { get; set; }
 }

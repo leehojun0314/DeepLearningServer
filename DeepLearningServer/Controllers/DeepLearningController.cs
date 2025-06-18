@@ -205,18 +205,18 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         var progressQueue = new Queue<ProgressEntry>();
                         var lastUpdateTime = DateTime.Now;
                         var updateInterval = TimeSpan.FromSeconds(5); // 5초마다 업데이트
-                        
+
                         instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
                         {
                             var now = DateTime.Now;
-                            
+
                             // 메모리에 진행상황 저장 (매번)
                             record.Status = TrainingStatus.Running;
                             record.Progress = progress;
                             record.BestIteration = bestIteration;
                             record.Accuracy = bestAccuracy;
                             record.Loss = 1 - bestAccuracy;
-                            
+
                             // ProgressEntry 큐에 추가
                             progressQueue.Enqueue(new ProgressEntry
                             {
@@ -226,7 +226,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 Timestamp = now,
                                 Accuracy = currentAccuracy
                             });
-                            
+
                             // 5초마다 또는 훈련 완료 시에만 DB 업데이트
                             if (now - lastUpdateTime >= updateInterval || !isTraining)
                             {
@@ -238,7 +238,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                         try
                                         {
                                             await _mssqlDbService.UpdateTrainingAsync(record);
-                                            
+
                                             // 배치로 ProgressEntry 처리
                                             if (progressQueue.Count > 0)
                                             {
@@ -247,13 +247,13 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                                 {
                                                     entries.Add(progressQueue.Dequeue());
                                                 }
-                                                
+
                                                 foreach (var entry in entries)
                                                 {
                                                     await _mssqlDbService.PushProgressEntryAsync(record.Id, entry);
                                                 }
                                             }
-                                            
+
                                             // 중요한 진행상황만 로깅 (Debug 레벨로 변경)
                                             if (bestIteration % 10 == 0) // 10 iteration마다만 로깅
                                             {
@@ -270,14 +270,14 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 {
                                     Console.WriteLine($"Task.Run error: {ex.Message}");
                                 }
-                                
+
                                 lastUpdateTime = now;
                             }
                         }).GetAwaiter().GetResult();
 
                         // ✅ 여러 개의 프로세스에 대한 모델 저장
                         string timeStamp = DateTime.Now.ToString("yyyyMMdd");
-                        
+
                         // ✅ admsProcessInfoList를 기반으로 모델 저장 (중복 제거 및 정확한 매핑)
                         foreach (var admsProcessInfo in admsProcessInfoList)
                         {
@@ -291,7 +291,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             // ✅ 새로운 경로 구조: ImageSize에 따라 LARGE 또는 MIDDLE 폴더 사용
                             string sizeFolder = parameterData.ImageSize == ImageSize.Large ? "LARGE" : "MIDDLE";
                             string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\EVALUATION\\{adms.Name}\\";
-                            
+
                             // ✅ 모델명을 ProcessId.edltool로 변경
                             string modelName = $"{processName}.edltool";
 
@@ -301,7 +301,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             }
 
                             string result = await instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
-                            
+
                             if (admsProcessInfo.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
                             {
                                 AdmsProcessType admsProcessType = await _mssqlDbService.GetAdmsProcessType(intAdmsProcessId);
@@ -385,6 +385,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                         _mssqlDbService.UpdateLabelsByIdAsync(record.Id, labelList).GetAwaiter().GetResult();
                         instance.StopTraining();
+                        instance.CleanupTempImages();
                         SingletonAiDuo.Reset(parameterData.ImageSize);
                         ToolStatusManager.SetProcessRunning(false);
                     }
@@ -395,6 +396,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
                         _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
                         instance.StopTraining();
+                        instance.CleanupTempImages();
                         SingletonAiDuo.Reset(parameterData.ImageSize);
                         // throw; 제거 - 예외를 다시 던지지 않고 정상적으로 종료
                         return;
@@ -417,6 +419,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             Console.WriteLine("Error Message: ", error.Message);
             if (_recordId == 0)
             {
+                var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
+                instance?.CleanupTempImages();
                 return BadRequest(new { Error = error.Message });
             }
             else
@@ -426,6 +430,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 if (instance != null)
                 {
                     instance.StopTraining();
+                    instance.CleanupTempImages();
                 }
                 SingletonAiDuo.Reset(parameterData.ImageSize);
                 Console.WriteLine(error.Message);
@@ -724,7 +729,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             Name = "DeepLearning-STA",
             IsBackground = true
         };
-        
+
         staThread.SetApartmentState(ApartmentState.STA);
         staThread.Start();
 
