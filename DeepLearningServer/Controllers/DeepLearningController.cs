@@ -124,15 +124,16 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             await _mssqlDbService.InsertTrainingAsync(record);
             _recordId = record.Id;
             Console.WriteLine("record inserted. Id: " + record.Id);
-            // ✅ TrainingAdmsProcess와 TrainingRecord 연결 (기존 코드 수정 ✅)
+            // ✅ TrainingAdmsProcess와 TrainingRecord 연결 (중복 제거 및 await 추가)
             var trainingAdmsProcesses = parameterData.AdmsProcessIds
+                .Distinct() // 중복 AdmsProcessId 제거
                 .Select(id => new TrainingAdmsProcess
                 {
                     TrainingRecordId = record.Id, // ✅ 저장된 TrainingRecordId 사용
                     AdmsProcessId = id
                 }).ToList();
 
-            _mssqlDbService.AddRangeTrainingAdmsProcess(trainingAdmsProcesses);
+            await _mssqlDbService.AddRangeTrainingAdmsProcess(trainingAdmsProcesses); // await 추가
             // ✅ Singleton 체크
             if (SingletonAiDuo.GetInstance(parameterData.ImageSize) != null &&
                 SingletonAiDuo.GetInstance(parameterData.ImageSize).IsTraining())
@@ -200,24 +201,78 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             }
                             _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
                         }
+                        // 🚀 성능 최적화: 배치 업데이트 및 로깅 최소화
+                        var progressQueue = new Queue<ProgressEntry>();
+                        var lastUpdateTime = DateTime.Now;
+                        var updateInterval = TimeSpan.FromSeconds(5); // 5초마다 업데이트
+                        
                         instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
                         {
-                            _mssqlDbService.InsertLogAsync($"progress: {progress}", LogLevel.Trace).GetAwaiter().GetResult();
-                            var newEntry = new ProgressEntry
-                            {
-                                IsTraining = isTraining,
-                                Progress = isTraining ? progress : 1,
-                                BestIteration = bestIteration,
-                                Timestamp = DateTime.Now,
-                                Accuracy = currentAccuracy
-                            };
+                            var now = DateTime.Now;
+                            
+                            // 메모리에 진행상황 저장 (매번)
                             record.Status = TrainingStatus.Running;
                             record.Progress = progress;
                             record.BestIteration = bestIteration;
                             record.Accuracy = bestAccuracy;
                             record.Loss = 1 - bestAccuracy;
-                            _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
-                            _mssqlDbService.PushProgressEntryAsync(record.Id, newEntry).GetAwaiter().GetResult();
+                            
+                            // ProgressEntry 큐에 추가
+                            progressQueue.Enqueue(new ProgressEntry
+                            {
+                                IsTraining = isTraining,
+                                Progress = isTraining ? progress : 1,
+                                BestIteration = bestIteration,
+                                Timestamp = now,
+                                Accuracy = currentAccuracy
+                            });
+                            
+                            // 5초마다 또는 훈련 완료 시에만 DB 업데이트
+                            if (now - lastUpdateTime >= updateInterval || !isTraining)
+                            {
+                                try
+                                {
+                                    // 백그라운드에서 비동기로 업데이트 (블로킹 없음)
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            await _mssqlDbService.UpdateTrainingAsync(record);
+                                            
+                                            // 배치로 ProgressEntry 처리
+                                            if (progressQueue.Count > 0)
+                                            {
+                                                var entries = new List<ProgressEntry>();
+                                                while (progressQueue.Count > 0 && entries.Count < 50) // 최대 50개씩 배치
+                                                {
+                                                    entries.Add(progressQueue.Dequeue());
+                                                }
+                                                
+                                                foreach (var entry in entries)
+                                                {
+                                                    await _mssqlDbService.PushProgressEntryAsync(record.Id, entry);
+                                                }
+                                            }
+                                            
+                                            // 중요한 진행상황만 로깅 (Debug 레벨로 변경)
+                                            if (bestIteration % 10 == 0) // 10 iteration마다만 로깅
+                                            {
+                                                await _mssqlDbService.InsertLogAsync($"Training progress: {progress:P1}, Best iteration: {bestIteration}, Accuracy: {bestAccuracy:P2}", LogLevel.Debug);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Console.WriteLine($"Background DB update error: {ex.Message}");
+                                        }
+                                    });
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Task.Run error: {ex.Message}");
+                                }
+                                
+                                lastUpdateTime = now;
+                            }
                         }).GetAwaiter().GetResult();
 
                         // ✅ 여러 개의 프로세스에 대한 모델 저장
@@ -238,7 +293,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\EVALUATION\\{adms.Name}\\";
                             
                             // ✅ 모델명을 ProcessId.edltool로 변경
-                            string modelName = $"{processId}.edltool";
+                            string modelName = $"{processName}.edltool";
 
                             if (!Directory.Exists(savePath))
                             {
@@ -264,57 +319,52 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             }
                         }
 
-                        // Save confusion matrix data after training completes
+                        // 🚀 혼동 행렬 저장 최적화 - 배치 처리
                         if (parameterData.Categories != null && parameterData.Categories.Length > 0)
                         {
-                            _mssqlDbService.InsertLogAsync("Saving confusion matrix data", LogLevel.Information).GetAwaiter().GetResult();
+                            await _mssqlDbService.InsertLogAsync("Saving confusion matrix data", LogLevel.Information);
 
                             // Include OK label in the categories
                             var allCategories = new List<string>(parameterData.Categories) { "OK" };
+                            var confusionData = new List<(string trueLabel, string predictedLabel, uint count)>();
 
-                            // Generate and save confusion matrix data
+                            // 먼저 모든 데이터 수집 (DB 호출 없음)
                             foreach (string trueLabel in allCategories)
                             {
                                 string trueLabelUpper = trueLabel.ToUpper();
-
                                 foreach (string predictedLabel in allCategories)
                                 {
                                     string predictedLabelUpper = predictedLabel.ToUpper();
-
                                     try
                                     {
-                                        // Use the safe version of GetConfusion that won't throw exceptions
                                         uint count = instance.GetConfusionSafe(trueLabelUpper, predictedLabelUpper);
-
-                                        // Only save if count is greater than 0 (optional)
                                         if (count > 0)
                                         {
-                                            _mssqlDbService.SaveConfusionMatrixAsync(record.Id, trueLabelUpper, predictedLabelUpper, count)
-                                                .GetAwaiter().GetResult();
-
-                                            _mssqlDbService.InsertLogAsync(
-                                                $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}",
-                                                LogLevel.Debug).GetAwaiter().GetResult();
-                                        }
-                                        else
-                                        {
-                                            _mssqlDbService.InsertLogAsync(
-                                                $"Skipped confusion matrix with zero count: true={trueLabelUpper}, predicted={predictedLabelUpper}",
-                                                LogLevel.Debug).GetAwaiter().GetResult();
+                                            confusionData.Add((trueLabelUpper, predictedLabelUpper, count));
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        // Log the error but continue processing other categories
-                                        _mssqlDbService.InsertLogAsync(
-                                            $"Error getting confusion data for true={trueLabelUpper}, predicted={predictedLabelUpper}: {ex.Message}",
-                                            LogLevel.Warning).GetAwaiter().GetResult();
+                                        Console.WriteLine($"Error getting confusion data for {trueLabelUpper}->{predictedLabelUpper}: {ex.Message}");
                                     }
                                 }
                             }
 
-                            _mssqlDbService.InsertLogAsync("Confusion matrix data saved successfully", LogLevel.Information)
-                                .GetAwaiter().GetResult();
+                            // 배치로 한번에 저장
+                            var saveTasks = confusionData.Select(async data =>
+                            {
+                                try
+                                {
+                                    await _mssqlDbService.SaveConfusionMatrixAsync(record.Id, data.trueLabel, data.predictedLabel, data.count);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Error saving confusion matrix {data.trueLabel}->{data.predictedLabel}: {ex.Message}");
+                                }
+                            });
+
+                            await Task.WhenAll(saveTasks);
+                            await _mssqlDbService.InsertLogAsync($"Confusion matrix data saved successfully ({confusionData.Count} entries)", LogLevel.Information);
                         }
 
                         record.Status = TrainingStatus.Completed;
@@ -346,7 +396,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
                         instance.StopTraining();
                         SingletonAiDuo.Reset(parameterData.ImageSize);
-                        throw;
+                        // throw; 제거 - 예외를 다시 던지지 않고 정상적으로 종료
+                        return;
                     }
                 });
             });
@@ -366,7 +417,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             Console.WriteLine("Error Message: ", error.Message);
             if (_recordId == 0)
             {
-                throw;
+                return BadRequest(new { Error = error.Message });
             }
             else
             {
@@ -379,7 +430,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 SingletonAiDuo.Reset(parameterData.ImageSize);
                 Console.WriteLine(error.Message);
                 _mssqlDbService.InsertLogAsync(error.Message, LogLevel.Error);
-                throw;
+                return BadRequest(new { Error = error.Message });
             }
 
         }
@@ -652,7 +703,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         }
     }
     [NonAction]
-    public Task RunOnStaThread(Action action)
+    public Task RunOnStaThread(Func<Task> asyncAction)
     {
         var tcs = new TaskCompletionSource<bool>();
 
@@ -660,14 +711,20 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         {
             try
             {
-                action();
+                // STA 스레드에서 비동기 작업을 안전하게 실행
+                asyncAction().GetAwaiter().GetResult();
                 tcs.SetResult(true);
             }
             catch (Exception ex)
             {
                 tcs.SetException(ex);
             }
-        });
+        })
+        {
+            Name = "DeepLearning-STA",
+            IsBackground = true
+        };
+        
         staThread.SetApartmentState(ApartmentState.STA);
         staThread.Start();
 

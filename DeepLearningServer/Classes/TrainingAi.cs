@@ -54,51 +54,6 @@ public class TrainingAi
 
 
     #region Load images
-
-    /*public int LoadImages(string processId)
-    {
-        if (parameterData == null) throw new Exception("Parameter data is null");
-        var imagePath = parameterData.ImageSize switch
-        {
-            ImageSize.Middle => serverSettings.MiddleImagePath,
-            ImageSize.Large => serverSettings.LargeImagePath,
-            _ => throw new Exception($"Error on loading images. Invalid size. {parameterData.ImageSize}"),
-        };
-        if (dataset == null) throw new Exception("Dataset is null");
-
-        Console.WriteLine($"Loading images from {imagePath}");
-        if (categories != null)
-        {
-            foreach (var category in categories)
-            {
-                var upperCategory = category.ToUpper();
-                Console.WriteLine("upper category: " + upperCategory);
-                dataset.AddImages(imagePath + $@"\NG\BASE\{upperCategory}\*.jpg", upperCategory);
-                // dataset.AddImages("D:\\Images\\DL_SERVER TEST\\20250107\\02_8AE05B-L-0\\J96972.1\\*.jpg", upperCategory);
-                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg");
-            }
-        }
-
-        //Load base OK images (processed images)
-        dataset.AddImages(imagePath + $@"\OK\{processId}\BASE\*.jpg", "OK");
-        //Load new OK images (processed images)
-        dataset.AddImages(imagePath + $@"\OK\{processId}\NEW\*.jpg", "OK");
-        //var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
-        //dataset.SplitDataset(tvDataset, testDataset, firstProportion);
-        //var secondProportion = parameterData.TrainingProportion /
-                                 //(parameterData.TrainingProportion + parameterData.ValidationProportion);
-        //tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
-        Console.WriteLine("Num labels: " + dataset.NumLabels);
-        Console.WriteLine($"num images: {dataset.NumImages}");
-        if (dataset.NumImages < 1)
-        {
-            throw new Exception("Error on loading images. Images not found");
-        }
-        else
-        {
-            return dataset.NumImages;
-        }
-    }*/
     public int LoadImages(string[] processNames)
     {
         if (parameterData == null) throw new Exception("Parameter data is null");
@@ -116,21 +71,96 @@ public class TrainingAi
             {
                 var upperCategory = category.ToUpper();
                 Console.WriteLine("upper category: " + upperCategory);
-                dataset.AddImages(imagePath + $@"\NG\BASE\{upperCategory}\*.jpg", upperCategory);
-                // dataset.AddImages("D:\\Images\\DL_SERVER TEST\\20250107\\02_8AE05B-L-0\\J96972.1\\*.jpg", upperCategory);
-                dataset.AddImages(imagePath + $@"\NG\NEW\{upperCategory}\*.jpg");
+                
+                // NG/BASE 폴더 체크 및 로드
+                string ngBasePath = imagePath + $@"\NG\BASE\{upperCategory}";
+                string ngBasePattern = ngBasePath + @"\*.jpg";
+                if (Directory.Exists(ngBasePath))
+                {
+                    var ngBaseFiles = Directory.GetFiles(ngBasePath, "*.jpg", SearchOption.AllDirectories);
+                    if (ngBaseFiles.Length > 0)
+                    {
+                        Console.WriteLine($"Loading {ngBaseFiles.Length} images from NG/BASE/{upperCategory}");
+                        dataset.AddImages(ngBasePattern, upperCategory);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"No images found in NG/BASE/{upperCategory}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"Directory not found: NG/BASE/{upperCategory}");
+                }
+                
+                // NG/NEW 폴더 체크 및 로드
+                string ngNewPath = imagePath + $@"\NG\NEW\{upperCategory}";
+                string ngNewPattern = ngNewPath + @"\*.jpg";
+                if (Directory.Exists(ngNewPath))
+                {
+                    var ngNewFiles = Directory.GetFiles(ngNewPath, "*.jpg", SearchOption.AllDirectories);
+                    if (ngNewFiles.Length > 0)
+                    {
+                        Console.WriteLine($"Loading {ngNewFiles.Length} images from NG/NEW/{upperCategory}");
+                        dataset.AddImages(ngNewPattern, upperCategory);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"No images found in NG/NEW/{upperCategory}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"Directory not found: NG/NEW/{upperCategory}");
+                }
             }
         }
         //Load base OK images (processed images)
         foreach (var processName in processNames)
         {
-            string basePath = imagePath + $@"\OK\{processName}\BASE\*.jpg";
-            string newPath = imagePath + $@"\OK\{processName}\NEW\*.jpg";
-            Console.WriteLine($"Base path: {basePath}");
-            Console.WriteLine($"New path: {newPath}");
-            dataset.AddImages(basePath, "OK");
-            //Load new OK images (processed images)
-            dataset.AddImages(newPath, "OK");
+            // OK/{processName}/BASE 폴더 체크 및 로드
+            string okBasePath = imagePath + $@"\OK\{processName}\BASE";
+            string okBasePattern = okBasePath + @"\*.jpg";
+            Console.WriteLine($"OK Base path: {okBasePath}");
+            if (Directory.Exists(okBasePath))
+            {
+                var okBaseFiles = Directory.GetFiles(okBasePath, "*.jpg", SearchOption.AllDirectories);
+                if (okBaseFiles.Length > 0)
+                {
+                    Console.WriteLine($"Loading {okBaseFiles.Length} images from OK/{processName}/BASE");
+                    dataset.AddImages(okBasePattern, "OK");
+                }
+                else
+                {
+                    Console.WriteLine($"No images found in OK/{processName}/BASE");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Directory not found: OK/{processName}/BASE");
+            }
+
+            // OK/{processName}/NEW 폴더 체크 및 로드
+            string okNewPath = imagePath + $@"\OK\{processName}\NEW";
+            string okNewPattern = okNewPath + @"\*.jpg";
+            Console.WriteLine($"OK New path: {okNewPath}");
+            if (Directory.Exists(okNewPath))
+            {
+                var okNewFiles = Directory.GetFiles(okNewPath, "*.jpg", SearchOption.AllDirectories);
+                if (okNewFiles.Length > 0)
+                {
+                    Console.WriteLine($"Loading {okNewFiles.Length} images from OK/{processName}/NEW");
+                    dataset.AddImages(okNewPattern, "OK");
+                }
+                else
+                {
+                    Console.WriteLine($"No images found in OK/{processName}/NEW");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Directory not found: OK/{processName}/NEW (this is common and not an error)");
+            }
         }
         var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
         dataset.SplitDataset(tvDataset, testDataset, firstProportion);
@@ -239,17 +269,20 @@ public class TrainingAi
             Console.WriteLine("Best Accuracy: " + bestAccuracy);
             float currentAccuracy = classifier.GetTrainingMetrics(iteration).Accuracy;
             Console.WriteLine("Current Accuracy: " + currentAccuracy);
-
+            Console.WriteLine("Previous Accuracy: " + prevAccuracy);
+            Console.WriteLine("currentAccuracy == prevAccuracy: " + (currentAccuracy == prevAccuracy));
             cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
                 );
-            // 동일한 Accuracy가 10번 반복되었으면 트레이닝 강제 종료
+            // 동일한 Accuracy가 5번 반복되었으면 트레이닝 강제 종료
+           
             if (currentAccuracy == prevAccuracy)
             {
                 sameAccuracyCount++;
-                if (sameAccuracyCount >= 10)
+                Console.WriteLine("same accuracy count increased: " + sameAccuracyCount);
+                if (sameAccuracyCount >= 5)
                 {
-                    Console.WriteLine("Accuracy hasn't improved for 10 iterations. Stopping training...");
-                    classifier.StopTraining(false);
+                    Console.WriteLine("Accuracy hasn't improved for 5 iterations. Stopping training...");
+                    classifier.StopTraining(true);
                     break;
                 }
             }
@@ -258,6 +291,7 @@ public class TrainingAi
                 sameAccuracyCount = 0; // Accuracy가 바뀌었으면 카운트 초기화
             }
             iteration++;
+            prevAccuracy = currentAccuracy; // 현재 Accuracy를 이전 Accuracy로 저장
             if (classifier.IsTraining() == false)
             {
                 break;
@@ -334,15 +368,36 @@ public class TrainingAi
         {
             string upperCategory = category.ToUpper();
             Console.WriteLine($"balanced currentAccuracy: {metrics.BalancedAccuracy}");
-            Console.WriteLine($"label currentAccuracy: {metrics.GetLabelAccuracy(upperCategory)}");
-            dictionary.Add(category.ToLower() + "Accuracy", metrics.GetLabelAccuracy(upperCategory));
-            dictionary.Add(category.ToLower() + "Error", metrics.GetLabelError(upperCategory));
-            foreach(string predictedCategory in categories)
+            
+            try
             {
-                string upperPredictedCategory = predictedCategory.ToUpper();
-                uint confusionResult = metrics.GetConfusion(upperCategory, upperCategory);
-                Console.WriteLine($"Get confusion result: {category}, {confusionResult}");
-
+                float labelAccuracy = metrics.GetLabelAccuracy(upperCategory);
+                float labelError = metrics.GetLabelError(upperCategory);
+                
+                Console.WriteLine($"label currentAccuracy: {labelAccuracy}");
+                dictionary.Add(category.ToLower() + "Accuracy", labelAccuracy);
+                dictionary.Add(category.ToLower() + "Error", labelError);
+                
+                foreach(string predictedCategory in categories)
+                {
+                    string upperPredictedCategory = predictedCategory.ToUpper();
+                    try
+                    {
+                        uint confusionResult = metrics.GetConfusion(upperCategory, upperCategory);
+                        Console.WriteLine($"Get confusion result: {category}, {confusionResult}");
+                    }
+                    catch (Exception confusionError)
+                    {
+                        Console.WriteLine($"Could not get confusion data for {category}: {confusionError.Message}");
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                // 해당 레이블이 존재하지 않는 경우 (이미지가 없어서 훈련에 사용되지 않음)
+                Console.WriteLine($"Label '{upperCategory}' not found in training results (no images for this category): {error.Message}");
+                dictionary.Add(category.ToLower() + "Accuracy", 0.0f);
+                dictionary.Add(category.ToLower() + "Error", 1.0f);
             }
         }
 

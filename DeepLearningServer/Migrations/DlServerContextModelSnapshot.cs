@@ -62,7 +62,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Adms");
+                    b.ToTable("Adms", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.AdmsProcess", b =>
@@ -85,7 +85,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "ProcessId" }, "IX_AdmsProcesses_ProcessId");
 
-                    b.ToTable("AdmsProcesses");
+                    b.ToTable("AdmsProcesses", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.AdmsProcessType", b =>
@@ -117,7 +117,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "AdmsProcessId" }, "IX_AdmsProcessTypes_AdmsProcessId");
 
-                    b.ToTable("AdmsProcessTypes");
+                    b.ToTable("AdmsProcessTypes", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ConfusionMatrix", b =>
@@ -151,7 +151,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "TrainingRecordId" }, "IX_ConfusionMatrices_TrainingRecordId");
 
-                    b.ToTable("ConfusionMatrices");
+                    b.ToTable("ConfusionMatrices", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
@@ -192,7 +192,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "AdmsProcessId" }, "IX_ImageFiles_AdmsProcessId");
 
-                    b.ToTable("ImageFiles");
+                    b.ToTable("ImageFiles", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Label", b =>
@@ -218,7 +218,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "TrainingRecordId" }, "IX_Labels_TrainingRecordId");
 
-                    b.ToTable("Labels");
+                    b.ToTable("Labels", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.LogRecord", b =>
@@ -244,7 +244,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("LogRecords");
+                    b.ToTable("LogRecords", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ModelRecord", b =>
@@ -291,7 +291,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "TrainingRecordId" }, "IX_ModelRecords_TrainingRecordId");
 
-                    b.ToTable("ModelRecords");
+                    b.ToTable("ModelRecords", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Permission", b =>
@@ -309,7 +309,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Permissions");
+                    b.ToTable("Permissions", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Process", b =>
@@ -333,7 +333,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Processes");
+                    b.ToTable("Processes", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.ProgressEntry", b =>
@@ -366,7 +366,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "TrainingRecordId" }, "IX_ProgressEntries_TrainingRecordId");
 
-                    b.ToTable("ProgressEntries");
+                    b.ToTable("ProgressEntries", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.PwdResetRequest", b =>
@@ -390,7 +390,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "UserId" }, "IX_PwdResetRequests_UserId");
 
-                    b.ToTable("PwdResetRequests");
+                    b.ToTable("PwdResetRequests", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.RecipeFile", b =>
@@ -429,7 +429,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "AdmsProcessId" }, "IX_RecipeFiles_AdmsProcessId");
 
-                    b.ToTable("RecipeFiles");
+                    b.ToTable("RecipeFiles", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Role", b =>
@@ -447,7 +447,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Roles");
+                    b.ToTable("Roles", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.RolePermission", b =>
@@ -462,7 +462,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex("PermissionId");
 
-                    b.ToTable("RolePermissions");
+                    b.ToTable("RolePermissions", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.TrainingAdmsProcess", b =>
@@ -485,7 +485,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex(new[] { "TrainingRecordId" }, "IX_TrainingAdmsProcesses_TrainingRecordId");
 
-                    b.ToTable("TrainingAdmsProcess");
+                    b.ToTable("TrainingAdmsProcess", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
@@ -625,7 +625,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("TrainingRecords");
+                    b.ToTable("TrainingRecords", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.User", b =>
@@ -655,7 +655,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.UserRole", b =>
@@ -670,7 +670,7 @@ namespace DeepLearningServer.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("UserRoles");
+                    b.ToTable("UserRoles", (string)null);
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.AdmsProcess", b =>
