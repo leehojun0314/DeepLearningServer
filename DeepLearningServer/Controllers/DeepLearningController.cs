@@ -118,9 +118,9 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 return BadRequest(new NewRecord("At least one AdmsProcessId is required."));
             }
             TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
-            record.CreatedTime = DateTime.Now;
-            record.Status = TrainingStatus.Running;
-            record.StartTime = DateTime.Now;
+            record.CreatedTime = DateTime.Now; // 요청을 받자마자 기록
+            record.Status = TrainingStatus.Loading; // 이미지 로딩 단계로 시작
+            record.StartTime = null; // 실제 훈련 시작 전까지는 null로 유지
             await _mssqlDbService.InsertTrainingAsync(record);
             _recordId = record.Id;
             Console.WriteLine("record inserted. Id: " + record.Id);
@@ -190,7 +190,14 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                         if (numImages == 0) return;
 
-                        _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}", LogLevel.Debug).GetAwaiter().GetResult();
+                        _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}, Elapsed time: {elapsedTime}", LogLevel.Debug).GetAwaiter().GetResult();
+                        
+                        // 이미지 로딩 완료 후 훈련 시작 준비
+                        record.Status = TrainingStatus.Running; // 실제 훈련 단계로 전환
+                        record.StartTime = DateTime.Now; // 실질적인 훈련 시작 시간 기록
+                        _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
+                        _mssqlDbService.InsertLogAsync("Training phase started after image loading completion", LogLevel.Information).GetAwaiter().GetResult();
+                        
                         instance.SetParameters();
                         if (parameterData.Classifier.UsePretrainedModel)
                         {
@@ -201,12 +208,9 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             }
                             _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
                         }
-                        // 🚀 성능 최적화: 배치 업데이트 및 로깅 최소화
-                        var progressQueue = new Queue<ProgressEntry>();
-                        var lastUpdateTime = DateTime.Now;
-                        var updateInterval = TimeSpan.FromSeconds(5); // 5초마다 업데이트
+                        ProgressEntry? previousProgressEntry = null;
 
-                        instance.Train((isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
+                        instance.Train(async (isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
                         {
                             var now = DateTime.Now;
 
@@ -217,63 +221,62 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             record.Accuracy = bestAccuracy;
                             record.Loss = 1 - bestAccuracy;
 
-                            // ProgressEntry 큐에 추가
-                            progressQueue.Enqueue(new ProgressEntry
+                            // 비동기로 DB 업데이트 - 하지만 순차 처리로 race condition 방지
+                            try
                             {
-                                IsTraining = isTraining,
-                                Progress = isTraining ? progress : 1,
-                                BestIteration = bestIteration,
-                                Timestamp = now,
-                                Accuracy = currentAccuracy
-                            });
-
-                            // 5초마다 또는 훈련 완료 시에만 DB 업데이트
-                            if (now - lastUpdateTime >= updateInterval || !isTraining)
-                            {
-                                try
+                                // 이전 ProgressEntry의 EndTime과 Duration 업데이트
+                                if (previousProgressEntry != null)
                                 {
-                                    // 백그라운드에서 비동기로 업데이트 (블로킹 없음)
-                                    _ = Task.Run(async () =>
-                                    {
-                                        try
-                                        {
-                                            await _mssqlDbService.UpdateTrainingAsync(record);
-
-                                            // 배치로 ProgressEntry 처리
-                                            if (progressQueue.Count > 0)
-                                            {
-                                                var entries = new List<ProgressEntry>();
-                                                while (progressQueue.Count > 0 && entries.Count < 50) // 최대 50개씩 배치
-                                                {
-                                                    entries.Add(progressQueue.Dequeue());
-                                                }
-
-                                                foreach (var entry in entries)
-                                                {
-                                                    await _mssqlDbService.PushProgressEntryAsync(record.Id, entry);
-                                                }
-                                            }
-
-                                            // 중요한 진행상황만 로깅 (Debug 레벨로 변경)
-                                            if (bestIteration % 10 == 0) // 10 iteration마다만 로깅
-                                            {
-                                                await _mssqlDbService.InsertLogAsync($"Training progress: {progress:P1}, Best iteration: {bestIteration}, Accuracy: {bestAccuracy:P2}", LogLevel.Debug);
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Console.WriteLine($"Background DB update error: {ex.Message}");
-                                        }
-                                    });
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine($"Task.Run error: {ex.Message}");
+                                    previousProgressEntry.EndTime = now;
+                                    previousProgressEntry.Duration = (now - previousProgressEntry.StartTime).TotalSeconds;
+                                    await _mssqlDbService.UpdateProgressEntryAsync(previousProgressEntry);
                                 }
 
-                                lastUpdateTime = now;
+                                // TrainingRecord 업데이트
+                                await _mssqlDbService.UpdateTrainingAsync(record);
+
+                                // 새로운 ProgressEntry 생성 및 저장
+                                var progressEntry = new ProgressEntry
+                                {
+                                    IsTraining = isTraining,
+                                    Progress = isTraining ? progress : 1,
+                                    BestIteration = bestIteration,
+                                    StartTime = now,
+                                    EndTime = null, // 다음 콜백에서 설정됨
+                                    Duration = null, // 다음 콜백에서 계산됨
+                                    Accuracy = currentAccuracy,
+                                    TrainingRecordId = record.Id
+                                };
+                                
+                                await _mssqlDbService.PushProgressEntryAsync(record.Id, progressEntry);
+                                previousProgressEntry = progressEntry; // 다음 콜백에서 사용하기 위해 저장
+
+                                // 매 iteration마다 로깅
+                                var durationText = previousProgressEntry?.Duration != null ? $", Duration: {previousProgressEntry.Duration:F2}s" : "";
+                                await _mssqlDbService.InsertLogAsync($"Training progress: {progress:P1}, Best iteration: {bestIteration}, Accuracy: {bestAccuracy:P2}{durationText}", LogLevel.Debug);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"DB update error: {ex.Message}");
                             }
                         }).GetAwaiter().GetResult();
+
+                        // 마지막 ProgressEntry의 EndTime과 Duration 설정
+                        if (previousProgressEntry != null)
+                        {
+                            try
+                            {
+                                var finalTime = DateTime.Now;
+                                previousProgressEntry.EndTime = finalTime;
+                                previousProgressEntry.Duration = (finalTime - previousProgressEntry.StartTime).TotalSeconds;
+                                await _mssqlDbService.UpdateProgressEntryAsync(previousProgressEntry);
+                                Console.WriteLine("마지막 ProgressEntry 업데이트 완료");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"마지막 ProgressEntry 업데이트 오류: {ex.Message}");
+                            }
+                        }
 
                         // ✅ 여러 개의 프로세스에 대한 모델 저장
                         string timeStamp = DateTime.Now.ToString("yyyyMMdd");
@@ -304,7 +307,17 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                             if (admsProcessInfo.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
                             {
-                                AdmsProcessType admsProcessType = await _mssqlDbService.GetAdmsProcessType(intAdmsProcessId);
+                                // ImageSize에 따른 Type 결정
+                                string admsProcessTypeString = parameterData.ImageSize switch
+                                {
+                                    ImageSize.Middle => "Middle",
+                                    ImageSize.Large => "Large",
+                                    _ => "Middle" // 기본값
+                                };
+                                
+                                // AdmsProcessType이 없으면 생성하고, 있으면 가져옴
+                                AdmsProcessType admsProcessType = await _mssqlDbService.GetOrCreateAdmsProcessType(intAdmsProcessId, admsProcessTypeString);
+                                
                                 var modelRecord = new ModelRecord
                                 {
                                     ModelName = modelName,
@@ -316,6 +329,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     CreatedAt = DateTime.Now
                                 };
                                 await _mssqlDbService.InsertModelRecordAsync(modelRecord);
+                                
+                                Console.WriteLine($"모델 레코드 저장 완료: ModelName={modelName}, AdmsProcessTypeId={admsProcessType.Id}, Status={result}");
                             }
                         }
 
@@ -394,7 +409,15 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         ToolStatusManager.SetProcessRunning(false);
                         Console.WriteLine("Error: " + e);
                         _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
-                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
+                        
+                        // 에러 발생 시 EndTime 설정 및 Status 업데이트
+                        var errorUpdates = new Dictionary<string, object> 
+                        { 
+                            { "Status", TrainingStatus.Failed },
+                            { "EndTime", DateTime.Now }
+                        };
+                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, errorUpdates).GetAwaiter().GetResult();
+                        
                         instance.StopTraining();
                         instance.CleanupTempImages();
                         SingletonAiDuo.Reset(parameterData.ImageSize);
@@ -425,7 +448,14 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             }
             else
             {
-                _mssqlDbService.PartialUpdateTrainingAsync(_recordId, new Dictionary<string, object> { { "Status", TrainingStatus.Failed } }).GetAwaiter().GetResult();
+                // 메인 에러 처리에서도 EndTime 설정
+                var errorUpdates = new Dictionary<string, object> 
+                { 
+                    { "Status", TrainingStatus.Failed },
+                    { "EndTime", DateTime.Now }
+                };
+                _mssqlDbService.PartialUpdateTrainingAsync(_recordId, errorUpdates).GetAwaiter().GetResult();
+                
                 var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
                 if (instance != null)
                 {

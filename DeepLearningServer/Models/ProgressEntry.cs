@@ -14,7 +14,10 @@ public partial class ProgressEntry
     public double BestIteration { get; set; }
 
     public float? Accuracy { get; set; }
-    public DateTime Timestamp { get; set; }
+    
+    public DateTime StartTime { get; set; }
+    public DateTime? EndTime { get; set; }
+    public double? Duration { get; set; } // Duration in seconds
 
     public int TrainingRecordId { get; set; }
 

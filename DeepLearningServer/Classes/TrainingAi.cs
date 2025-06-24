@@ -12,7 +12,7 @@ namespace DeepLearningServer.Classes;
 
 public class TrainingAi
 {
-    public delegate void TrainCallback(bool isTraining, float progress, int bestIteration, float currentAccuracy, float bestAccuracy
+    public delegate Task TrainCallback(bool isTraining, float progress, int bestIteration, float currentAccuracy, float bestAccuracy
         );
 
     private readonly ServerSettings serverSettings;
@@ -107,8 +107,9 @@ public class TrainingAi
                 }
             }
         }
-        // OK 이미지 복사 및 로드
+        // NG 이미지 데이터셋 추가
         int totalImages = 0;
+        int okImageCount = 0;
         if (categories != null)
         {
             foreach (var category in categories)
@@ -122,23 +123,89 @@ public class TrainingAi
                     {
                         dataset.AddImages(Path.Combine(tempCategoryDir, "*.jpg"), upperCategory);
                         totalImages += files.Length;
+                        Console.WriteLine($"NG 카테고리 '{upperCategory}' 이미지 추가: {files.Length}개");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"NG 카테고리 '{upperCategory}' 이미지 없음");
                     }
                 }
-            }
-        }
-        foreach (var processName in processNames)
-        {
-            string tempOkDir = Path.Combine(tempImageSessionDir, "OK", processName);
-            if (Directory.Exists(tempOkDir))
-            {
-                var files = Directory.GetFiles(tempOkDir, "*.jpg", SearchOption.AllDirectories);
-                if (files.Length > 0)
+                else
                 {
-                    dataset.AddImages(Path.Combine(tempOkDir, "*.jpg"), "OK");
-                    totalImages += files.Length;
+                    Console.WriteLine($"NG 카테고리 '{upperCategory}' 디렉토리 없음: {tempCategoryDir}");
                 }
             }
         }
+
+        // OK 이미지 복사 및 로드
+        Console.WriteLine($"OK 이미지 로딩 시작. 프로세스 이름들: [{string.Join(", ", processNames)}]");
+        foreach (var processName in processNames)
+        {
+            // OK 이미지 복사 먼저 수행 - 올바른 경로 순서로 수정
+            string okBasePath = imagePath + $@"\OK\{processName}\BASE";
+            string okNewPath = imagePath + $@"\OK\{processName}\NEW";
+            string tempOkProcessDir = Path.Combine(tempImageSessionDir, "OK", processName);
+            
+            Console.WriteLine($"프로세스 '{processName}' OK 이미지 처리 중...");
+            Console.WriteLine($"  - BASE 경로: {okBasePath}");
+            Console.WriteLine($"  - NEW 경로: {okNewPath}");
+            Console.WriteLine($"  - 임시 디렉토리: {tempOkProcessDir}");
+            
+            Directory.CreateDirectory(tempOkProcessDir);
+            int processOkCount = 0;
+
+            // OK/BASE 폴더 체크 및 복사
+            if (Directory.Exists(okBasePath))
+            {
+                var okBaseFiles = Directory.GetFiles(okBasePath, "*.jpg", SearchOption.AllDirectories);
+                Console.WriteLine($"  - BASE에서 찾은 OK 이미지: {okBaseFiles.Length}개");
+                foreach (var file in okBaseFiles)
+                {
+                    string dest = Path.Combine(tempOkProcessDir, Path.GetFileName(file));
+                    File.Copy(file, dest, true);
+                    processOkCount++;
+                }
+            }
+            else
+            {
+                Console.WriteLine($"  - BASE 디렉토리 없음: {okBasePath}");
+            }
+
+            // OK/NEW 폴더 체크 및 복사
+            if (Directory.Exists(okNewPath))
+            {
+                var okNewFiles = Directory.GetFiles(okNewPath, "*.jpg", SearchOption.AllDirectories);
+                Console.WriteLine($"  - NEW에서 찾은 OK 이미지: {okNewFiles.Length}개");
+                foreach (var file in okNewFiles)
+                {
+                    string dest = Path.Combine(tempOkProcessDir, Path.GetFileName(file));
+                    File.Copy(file, dest, true);
+                    processOkCount++;
+                }
+            }
+            else
+            {
+                Console.WriteLine($"  - NEW 디렉토리 없음: {okNewPath}");
+            }
+
+            // 데이터셋에 추가
+            if (Directory.Exists(tempOkProcessDir))
+            {
+                var files = Directory.GetFiles(tempOkProcessDir, "*.jpg", SearchOption.AllDirectories);
+                if (files.Length > 0)
+                {
+                    dataset.AddImages(Path.Combine(tempOkProcessDir, "*.jpg"), "OK");
+                    totalImages += files.Length;
+                    okImageCount += files.Length;
+                    Console.WriteLine($"  - 프로세스 '{processName}' OK 이미지 데이터셋 추가: {files.Length}개");
+                }
+                else
+                {
+                    Console.WriteLine($"  - 프로세스 '{processName}' OK 이미지 없음 (복사 후에도)");
+                }
+            }
+        }
+        Console.WriteLine($"총 OK 이미지 수: {okImageCount}개");
         var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
         dataset.SplitDataset(tvDataset, testDataset, firstProportion);
         var secondProportion = parameterData.TrainingProportion /
@@ -234,46 +301,58 @@ public class TrainingAi
             classifier.Train(trainingDataset, validationDataset, dataAug, parameterData?.Iterations ?? 3);
         }
         int iteration = 0;
-        float prevAccuracy = -1; // 이전 Accuracy 저장 변수
-        int sameAccuracyCount = 0; // 이전 Accuracy와 같은 Accuracy가 나온 횟수
+        float bestAccuracySeenSoFar = -1; // 지금까지 본 최고 정확도
+        int noImprovementCount = 0; // 개선되지 않은 연속 횟수
+        float improvementThreshold = serverSettings.EarlyStoppingThreshold; // 개선으로 간주할 최소 임계값 (설정에서 가져옴)
+        int patienceLimit = serverSettings.EarlyStoppingPatience; // 얼리 스타핑 patience (설정에서 가져옴)
+        
+        Console.WriteLine($"Early Stopping 설정 - Patience: {patienceLimit}, Threshold: {improvementThreshold}");
+        
         while (true)
         {
-            //iteration++;
             int completion = classifier.WaitForIterationCompletion();
             Console.WriteLine("completion: " + completion);
 
             float bestAccuracy = classifier.GetTrainingMetrics(classifier.BestIteration).Accuracy;
             Console.WriteLine("Best Accuracy: " + bestAccuracy);
+            
+            // 현재 iteration의 정확도 가져오기 (iteration 0부터 시작)
             float currentAccuracy = classifier.GetTrainingMetrics(iteration).Accuracy;
             Console.WriteLine("Current Accuracy: " + currentAccuracy);
-            Console.WriteLine("Previous Accuracy: " + prevAccuracy);
-            Console.WriteLine("currentAccuracy == prevAccuracy: " + (currentAccuracy == prevAccuracy));
+            Console.WriteLine("Best Accuracy So Far: " + bestAccuracySeenSoFar);
+            
             cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
-                );
-            // 동일한 Accuracy가 5번 반복되었으면 트레이닝 강제 종료
+                ).GetAwaiter().GetResult();
 
-            if (currentAccuracy == prevAccuracy)
+            // 얼리 스타핑 로직 - 최고 정확도 기준으로 개선 여부 판단
+            if (currentAccuracy > bestAccuracySeenSoFar + improvementThreshold)
             {
-                sameAccuracyCount++;
-                Console.WriteLine("same accuracy count increased: " + sameAccuracyCount);
-                if (sameAccuracyCount >= 5)
+                // 유의미한 개선이 있었음
+                bestAccuracySeenSoFar = currentAccuracy;
+                noImprovementCount = 0;
+                Console.WriteLine($"Accuracy improved! New best: {bestAccuracySeenSoFar:F4}");
+            }
+            else
+            {
+                // 개선되지 않음
+                noImprovementCount++;
+                Console.WriteLine($"No improvement for {noImprovementCount} iterations (current: {currentAccuracy:F4}, best: {bestAccuracySeenSoFar:F4})");
+                
+                if (noImprovementCount >= patienceLimit)
                 {
-                    Console.WriteLine("Accuracy hasn't improved for 5 iterations. Stopping training...");
+                    Console.WriteLine($"Early stopping: No improvement for {patienceLimit} consecutive iterations. Stopping training...");
                     classifier.StopTraining(true);
                     break;
                 }
             }
-            else
-            {
-                sameAccuracyCount = 0; // Accuracy가 바뀌었으면 카운트 초기화
-            }
+            
             iteration++;
-            prevAccuracy = currentAccuracy; // 현재 Accuracy를 이전 Accuracy로 저장
+            
             if (classifier.IsTraining() == false)
             {
+                Console.WriteLine("Training completed normally.");
                 break;
             }
-
         }
         // classifier.WaitForTrainingCompletion();
 

@@ -130,7 +130,7 @@ namespace DeepLearningServer.Services
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
             var admsProcessType = await context.AdmsProcessTypes.FindAsync(admsProcessId);
             if (admsProcessType == null)
-                throw new NullReferenceException("AdmsProcessType not found");
+                throw new NullReferenceException("AdmsProcessType not found. AdmsProcessId: " + admsProcessId);
             return admsProcessType;
         }
         public async Task PartialUpdateTrainingAsync(int id, Dictionary<string, object> updates)
@@ -169,29 +169,33 @@ namespace DeepLearningServer.Services
             };
             return false;
         }
-        //public async Task<AdmsProcessType> GetOrCreateAdmsProcessType(int admsProcessId, string type)
-        //{
-           
-        //        using var context = new DlServerContext(GetDbContextOptions(), _configuration); var admsProcessType = await _context.AdmsProcessTypes
-        //            .FirstOrDefaultAsync(p => p.AdmsProcessId == admsProcessId && p.Type == type);
+        public async Task<AdmsProcessType> GetOrCreateAdmsProcessType(int admsProcessId, string type)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            
+            // 먼저 기존 AdmsProcessType 조회
+            var admsProcessType = await context.AdmsProcessTypes
+                .FirstOrDefaultAsync(p => p.AdmsProcessId == admsProcessId && p.Type == type);
 
-        //        if (admsProcessType == null)
-        //        {
-        //            admsProcessType = new AdmsProcessType
-        //            {
-        //                AdmsProcessId = admsProcessId,
-        //                Type = type,
-        //                IsCategorized = false, // 기본값
-        //                IsTrainned = (type == "Small") ? false : false, // Small은 False, 나머지는 초기 False
-        //                LastSyncDate = DateTime.UtcNow
-        //            };
+            if (admsProcessType == null)
+            {
+                // AdmsProcessType이 없으면 생성
+                admsProcessType = new AdmsProcessType
+                {
+                    AdmsProcessId = admsProcessId,
+                    Type = type,
+                    IsCategorized = false, // 기본값
+                    IsTrainned = true, // 훈련이 완료된 상태로 생성
+                    LastSyncDate = DateTime.Now
+                };
 
-        //            context.AdmsP.Add(admsProcessType);
-        //            await context.SaveChangesAsync();
-        //            _logger.LogInformation("새로운 AdmsProcessType 생성: {Type}, AdmsProcessId: {AdmsProcessId}", type, admsProcessId);
-        //        }
-        //        return admsProcessType;
-        //}
+                context.AdmsProcessTypes.Add(admsProcessType);
+                await context.SaveChangesAsync();
+                Console.WriteLine($"새로운 AdmsProcessType 생성: Type={type}, AdmsProcessId={admsProcessId}, Id={admsProcessType.Id}");
+            }
+            
+            return admsProcessType;
+        }
         public async Task PushProgressEntryAsync(int recordId, ProgressEntry newEntry)
         {
             using var context = new DlServerContext(GetDbContextOptions(), _configuration);
@@ -203,6 +207,13 @@ namespace DeepLearningServer.Services
                 throw new NullReferenceException("TrainingRecord not found");
 
             trainingRecord.ProgressEntries.Add(newEntry);
+            await context.SaveChangesAsync();
+        }
+
+        public async Task UpdateProgressEntryAsync(ProgressEntry progressEntry)
+        {
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+            context.ProgressEntries.Update(progressEntry);
             await context.SaveChangesAsync();
         }
 

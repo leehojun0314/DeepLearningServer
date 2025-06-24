@@ -12,7 +12,7 @@ public partial class TrainingRecord
 
     public DateTime CreatedTime { get; set; }
 
-    public DateTime StartTime { get; set; }
+    public DateTime? StartTime { get; set; }
 
     public DateTime? EndTime { get; set; }
 
