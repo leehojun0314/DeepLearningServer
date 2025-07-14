@@ -27,6 +27,9 @@ public class TrainingDto
     [DefaultValue(50)]
     public int Iterations { get; set; } = 50;
 
+    [DefaultValue(10)]
+    public int EarlyStoppingPatience { get; set; } = 10;
+
     // 이하부터는 기존에 하나씩 있던 파라미터들을 하위 객체로 정리
     public GeometryParamsDto Geometry { get; set; } = new();
     public ColorParamsDto Color { get; set; } = new();
@@ -137,4 +140,7 @@ public class ClassifierParamsDto
 
     [DefaultValue(32)]
     public int BatchSize { get; set; } = 32;
+
+    [DefaultValue(false)]
+    public bool EnableDeterministicTraining { get; set; } = false;
 }

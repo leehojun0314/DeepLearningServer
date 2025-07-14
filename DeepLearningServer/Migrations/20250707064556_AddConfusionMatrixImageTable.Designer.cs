@@ -4,6 +4,7 @@ using DeepLearningServer.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace DeepLearningServer.Migrations
 {
     [DbContext(typeof(DlServerContext))]
-    partial class DlServerContextModelSnapshot : ModelSnapshot
+    [Migration("20250707064556_AddConfusionMatrixImageTable")]
+    partial class AddConfusionMatrixImageTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -128,6 +131,9 @@ namespace DeepLearningServer.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<long>("Count")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime");
 
@@ -193,15 +199,11 @@ namespace DeepLearningServer.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("AdmsProcessId")
+                    b.Property<int>("AdmsProcessId")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("CapturedTime")
                         .HasColumnType("datetime");
-
-                    b.Property<string>("Category")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Directory")
                         .IsRequired()
@@ -226,10 +228,6 @@ namespace DeepLearningServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex(new[] { "AdmsProcessId" }, "IX_ImageFiles_AdmsProcessId");
-
-                    b.HasIndex(new[] { "Name", "Directory", "AdmsProcessId" }, "IX_ImageFiles_Name_Directory_AdmsProcessId");
-
-                    b.HasIndex(new[] { "Name", "Directory", "Category" }, "IX_ImageFiles_Name_Directory_Category");
 
                     b.ToTable("ImageFiles");
                 });
@@ -533,61 +531,6 @@ namespace DeepLearningServer.Migrations
                     b.ToTable("TrainingAdmsProcess");
                 });
 
-            modelBuilder.Entity("DeepLearningServer.Models.TrainingImageResult", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AdmsProcessId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Category")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<float?>("Confidence")
-                        .HasColumnType("real");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime");
-
-                    b.Property<int>("ImageFileId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PredictedLabel")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<int>("TrainingRecordId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("TrueLabel")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex(new[] { "AdmsProcessId" }, "IX_TrainingImageResults_AdmsProcessId");
-
-                    b.HasIndex(new[] { "ImageFileId" }, "IX_TrainingImageResults_ImageFileId");
-
-                    b.HasIndex(new[] { "TrainingRecordId" }, "IX_TrainingImageResults_TrainingRecordId");
-
-                    b.HasIndex(new[] { "TrainingRecordId", "TrueLabel", "PredictedLabel" }, "IX_TrainingImageResults_TrainingRecord_Labels");
-
-                    b.ToTable("TrainingImageResults");
-                });
-
             modelBuilder.Entity("DeepLearningServer.Models.TrainingRecord", b =>
                 {
                     b.Property<int>("Id")
@@ -838,7 +781,8 @@ namespace DeepLearningServer.Migrations
                     b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
                         .WithMany("ImageFiles")
                         .HasForeignKey("AdmsProcessId")
-                        .OnDelete(DeleteBehavior.NoAction);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("AdmsProcess");
                 });
@@ -943,32 +887,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("TrainingRecord");
                 });
 
-            modelBuilder.Entity("DeepLearningServer.Models.TrainingImageResult", b =>
-                {
-                    b.HasOne("DeepLearningServer.Models.AdmsProcess", "AdmsProcess")
-                        .WithMany()
-                        .HasForeignKey("AdmsProcessId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("DeepLearningServer.Models.ImageFile", "ImageFile")
-                        .WithMany("TrainingImageResults")
-                        .HasForeignKey("ImageFileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("DeepLearningServer.Models.TrainingRecord", "TrainingRecord")
-                        .WithMany("TrainingImageResults")
-                        .HasForeignKey("TrainingRecordId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("AdmsProcess");
-
-                    b.Navigation("ImageFile");
-
-                    b.Navigation("TrainingRecord");
-                });
-
             modelBuilder.Entity("DeepLearningServer.Models.UserRole", b =>
                 {
                     b.HasOne("DeepLearningServer.Models.Role", "Role")
@@ -1017,8 +935,6 @@ namespace DeepLearningServer.Migrations
             modelBuilder.Entity("DeepLearningServer.Models.ImageFile", b =>
                 {
                     b.Navigation("ConfusionMatrixImages");
-
-                    b.Navigation("TrainingImageResults");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.Permission", b =>
@@ -1049,8 +965,6 @@ namespace DeepLearningServer.Migrations
                     b.Navigation("ProgressEntries");
 
                     b.Navigation("TrainingAdmsProcesses");
-
-                    b.Navigation("TrainingImageResults");
                 });
 
             modelBuilder.Entity("DeepLearningServer.Models.User", b =>

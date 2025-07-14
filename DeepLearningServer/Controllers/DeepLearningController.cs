@@ -45,6 +45,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     /// - ValidationProportion: 검증 데이터 비율 (0~1 사이 값). 전체 데이터 중 검증에 사용될 데이터 비율
     /// - TestProportion: 테스트 데이터 비율 (0~1 사이 값). 전체 데이터 중 테스트에 사용될 데이터 비율
     /// - Iterations: 훈련 반복 횟수. 기본값은 50회
+    /// - EarlyStoppingPatience: 조기 중단 파라미터. 기본값은 10회
     /// 
     /// - Geometry: 기하학적 데이터 증강 파라미터
     ///   - MaxRotation: 최대 회전 각도. 이미지 회전 증강에 사용됨 (0: 회전 없음)
@@ -85,6 +86,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     ///   - ComputeHeatMap: 히트맵 계산 여부. 이미지에서 중요 영역을 시각화하는데 사용
     ///   - EnableHistogramEqualization: 히스토그램 평활화 사용 여부. 이미지 대비를 향상시키는데 사용
     ///   - BatchSize: 배치 크기. 한 번에 처리할 이미지 수로, 메모리 사용량과 학습 속도에 영향
+    ///   - EnableDeterministicTraining: 결정적 훈련 사용 여부. true로 설정하면 동일한 결과를 보장하는 훈련을 수행
     /// </param>
     /// <returns>훈련 초기화 성공 메시지와 훈련 ID</returns>
     [HttpPost("run")]
@@ -182,6 +184,9 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 {
                     try
                     {
+                        // 새로운 훈련 시작 시 중단 상태 리셋
+                        instance.ResetStopState();
+
                         int numImages = 0;
                         TimeSpan elapsedTime = MeasureExecutionTime.Measure(() =>
                         {
@@ -191,13 +196,13 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         if (numImages == 0) return;
 
                         _mssqlDbService.InsertLogAsync($"Images loaded. Count: {numImages}, Elapsed time: {elapsedTime}", LogLevel.Debug).GetAwaiter().GetResult();
-                        
+
                         // 이미지 로딩 완료 후 훈련 시작 준비
                         record.Status = TrainingStatus.Running; // 실제 훈련 단계로 전환
                         record.StartTime = DateTime.Now; // 실질적인 훈련 시작 시간 기록
                         _mssqlDbService.UpdateTrainingAsync(record).GetAwaiter().GetResult();
                         _mssqlDbService.InsertLogAsync("Training phase started after image loading completion", LogLevel.Information).GetAwaiter().GetResult();
-                        
+
                         instance.SetParameters();
                         if (parameterData.Classifier.UsePretrainedModel)
                         {
@@ -247,7 +252,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     Accuracy = currentAccuracy,
                                     TrainingRecordId = record.Id
                                 };
-                                
+
                                 await _mssqlDbService.PushProgressEntryAsync(record.Id, progressEntry);
                                 previousProgressEntry = progressEntry; // 다음 콜백에서 사용하기 위해 저장
 
@@ -276,6 +281,39 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             {
                                 Console.WriteLine($"마지막 ProgressEntry 업데이트 오류: {ex.Message}");
                             }
+                        }
+
+                        // ✅ 훈련 이미지 기록을 데이터베이스에 저장
+                        try
+                        {
+                            // AdmsProcessId 매핑 정보 생성 (processName -> admsProcessId)
+                            var processAdmsMapping = new Dictionary<string, int>();
+                            foreach (var info in admsProcessInfoList)
+                            {
+                                if (info.TryGetValue("processName", out object processNameValue) &&
+                                    info.TryGetValue("admsProcessId", out object admsProcessIdValue) &&
+                                    processNameValue is string pName &&
+                                    admsProcessIdValue is int apId)
+                                {
+                                    processAdmsMapping[pName] = apId;
+                                }
+                            }
+
+                            // TrainingAi 인스턴스에 매핑 정보 설정
+                            instance.SetAdmsProcessMapping(processAdmsMapping);
+
+                            // 훈련 이미지 기록 가져오기 및 저장
+                            var trainingImageRecords = instance.GetTrainingImageRecords();
+                            if (trainingImageRecords.Count > 0)
+                            {
+                                await _mssqlDbService.SaveTrainingImagesAsync(trainingImageRecords, record.Id, parameterData.ImageSize);
+                                await _mssqlDbService.InsertLogAsync($"Saved {trainingImageRecords.Count} training image records to database", LogLevel.Information);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Error saving training images to database: {ex.Message}");
+                            await _mssqlDbService.InsertLogAsync($"Error saving training images: {ex.Message}", LogLevel.Error);
                         }
 
                         // ✅ 여러 개의 프로세스에 대한 모델 저장
@@ -314,10 +352,10 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     ImageSize.Large => "Large",
                                     _ => "Middle" // 기본값
                                 };
-                                
+
                                 // AdmsProcessType이 없으면 생성하고, 있으면 가져옴
                                 AdmsProcessType admsProcessType = await _mssqlDbService.GetOrCreateAdmsProcessType(intAdmsProcessId, admsProcessTypeString);
-                                
+
                                 var modelRecord = new ModelRecord
                                 {
                                     ModelName = modelName,
@@ -329,57 +367,25 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     CreatedAt = DateTime.Now
                                 };
                                 await _mssqlDbService.InsertModelRecordAsync(modelRecord);
-                                
+
                                 Console.WriteLine($"모델 레코드 저장 완료: ModelName={modelName}, AdmsProcessTypeId={admsProcessType.Id}, Status={result}");
                             }
                         }
 
-                        // 🚀 혼동 행렬 저장 최적화 - 배치 처리
+                        // 🎯 새로운 단순한 구조: 개별 이미지 추론 결과만 저장
                         if (parameterData.Categories != null && parameterData.Categories.Length > 0)
                         {
-                            await _mssqlDbService.InsertLogAsync("Saving confusion matrix data", LogLevel.Information);
+                            await _mssqlDbService.InsertLogAsync("🚀 Starting simplified TrainingImageResult processing", LogLevel.Information);
+                            Console.WriteLine("🔍 DEBUG: Starting simplified TrainingImageResult processing...");
 
-                            // Include OK label in the categories
+                            // Include OK label in the categories  
                             var allCategories = new List<string>(parameterData.Categories) { "OK" };
-                            var confusionData = new List<(string trueLabel, string predictedLabel, uint count)>();
 
-                            // 먼저 모든 데이터 수집 (DB 호출 없음)
-                            foreach (string trueLabel in allCategories)
-                            {
-                                string trueLabelUpper = trueLabel.ToUpper();
-                                foreach (string predictedLabel in allCategories)
-                                {
-                                    string predictedLabelUpper = predictedLabel.ToUpper();
-                                    try
-                                    {
-                                        uint count = instance.GetConfusionSafe(trueLabelUpper, predictedLabelUpper);
-                                        if (count > 0)
-                                        {
-                                            confusionData.Add((trueLabelUpper, predictedLabelUpper, count));
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Console.WriteLine($"Error getting confusion data for {trueLabelUpper}->{predictedLabelUpper}: {ex.Message}");
-                                    }
-                                }
-                            }
+                            // 🔥 단순화된 접근: 각 이미지에 대해 추론 실행하여 TrainingImageResult에 직접 저장
+                            await SaveConfusionMatrixImages(record.Id, allCategories, instance, parameterData.ImageSize);
 
-                            // 배치로 한번에 저장
-                            var saveTasks = confusionData.Select(async data =>
-                            {
-                                try
-                                {
-                                    await _mssqlDbService.SaveConfusionMatrixAsync(record.Id, data.trueLabel, data.predictedLabel, data.count);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine($"Error saving confusion matrix {data.trueLabel}->{data.predictedLabel}: {ex.Message}");
-                                }
-                            });
-
-                            await Task.WhenAll(saveTasks);
-                            await _mssqlDbService.InsertLogAsync($"Confusion matrix data saved successfully ({confusionData.Count} entries)", LogLevel.Information);
+                            await _mssqlDbService.InsertLogAsync("✅ TrainingImageResult processing completed", LogLevel.Information);
+                            Console.WriteLine("✅ DEBUG: Simplified TrainingImageResult processing completed");
                         }
 
                         record.Status = TrainingStatus.Completed;
@@ -404,20 +410,40 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         SingletonAiDuo.Reset(parameterData.ImageSize);
                         ToolStatusManager.SetProcessRunning(false);
                     }
+                    catch (OperationCanceledException cancelEx)
+                    {
+                        ToolStatusManager.SetProcessRunning(false);
+                        Console.WriteLine($"Training was cancelled: {cancelEx.Message}");
+                        _mssqlDbService.InsertLogAsync($"Training was cancelled: {cancelEx.Message}", LogLevel.Information).GetAwaiter().GetResult();
+
+                        // 취소 시 상태를 Cancelled로 업데이트
+                        var cancelUpdates = new Dictionary<string, object>
+                        {
+                            { "Status", TrainingStatus.Cancelled }, // 또는 별도의 Cancelled 상태가 있다면 사용
+                            { "EndTime", DateTime.Now }
+                        };
+                        _mssqlDbService.PartialUpdateTrainingAsync(record.Id, cancelUpdates).GetAwaiter().GetResult();
+
+                        instance.StopTraining();
+                        instance.CleanupTempImages();
+                        SingletonAiDuo.Reset(parameterData.ImageSize);
+                        Console.WriteLine("Training cancellation cleanup completed");
+                        return;
+                    }
                     catch (Exception e)
                     {
                         ToolStatusManager.SetProcessRunning(false);
                         Console.WriteLine("Error: " + e);
                         _mssqlDbService.InsertLogAsync($"Error occurred: {e.Message}", LogLevel.Error).GetAwaiter().GetResult();
-                        
+
                         // 에러 발생 시 EndTime 설정 및 Status 업데이트
-                        var errorUpdates = new Dictionary<string, object> 
-                        { 
+                        var errorUpdates = new Dictionary<string, object>
+                        {
                             { "Status", TrainingStatus.Failed },
                             { "EndTime", DateTime.Now }
                         };
                         _mssqlDbService.PartialUpdateTrainingAsync(record.Id, errorUpdates).GetAwaiter().GetResult();
-                        
+
                         instance.StopTraining();
                         instance.CleanupTempImages();
                         SingletonAiDuo.Reset(parameterData.ImageSize);
@@ -449,13 +475,13 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             else
             {
                 // 메인 에러 처리에서도 EndTime 설정
-                var errorUpdates = new Dictionary<string, object> 
-                { 
+                var errorUpdates = new Dictionary<string, object>
+                {
                     { "Status", TrainingStatus.Failed },
                     { "EndTime", DateTime.Now }
                 };
                 _mssqlDbService.PartialUpdateTrainingAsync(_recordId, errorUpdates).GetAwaiter().GetResult();
-                
+
                 var instance = SingletonAiDuo.GetInstance(parameterData.ImageSize);
                 if (instance != null)
                 {
@@ -472,38 +498,102 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     }
 
     /// <summary>
-    /// 특정 이미지 크기의 훈련을 중지합니다.
+    /// 현재 진행 중인 훈련을 중지하고 인스턴스를 완전히 해제합니다.
     /// </summary>
-    /// <param name="imageSize">
-    /// 중지할 훈련의 이미지 크기:
-    /// - Middle(0): 중간 크기 이미지
-    /// - Large(1): 큰 크기 이미지
-    /// </param>
     /// <returns>처리 완료 메시지</returns>
-    [HttpDelete("stop/{imageSize}")]
+    [HttpDelete("stop")]
     [AuthorizeByRole(UserRoleType.Operator, UserRoleType.Manager, UserRoleType.PROCEngineer, UserRoleType.ServiceEngineer)]
-    public async Task<IActionResult> StopTraining([FromRoute] ImageSize imageSize)
+    public async Task<IActionResult> StopTraining()
     {
         try
         {
-            await _mssqlDbService.InsertLogAsync("Stop training called", LogLevel.Information);
-            var instance = SingletonAiDuo.GetInstance(imageSize);
+            await _mssqlDbService.InsertLogAsync("Stop training and dispose instance called", LogLevel.Information);
 
-            if (instance == null)
+            // 실행 중인 인스턴스 찾기  
+            var middleInstance = SingletonAiDuo.GetInstance(ImageSize.Middle);
+            var largeInstance = SingletonAiDuo.GetInstance(ImageSize.Large);
+
+            TrainingAi? runningInstance = null;
+            ImageSize runningImageSize = ImageSize.Middle; // 초기화 추가  
+
+            // Middle 인스턴스가 실행 중인지 확인  
+            if (middleInstance != null && middleInstance.IsTraining())
             {
-                await _mssqlDbService.InsertLogAsync("Stop training error: Instance is null.", LogLevel.Error);
-                return BadRequest(new NewRecord("Instance is null."));
+                runningInstance = middleInstance;
+                runningImageSize = ImageSize.Middle;
+                Console.WriteLine("Found running Middle instance");
+                await _mssqlDbService.InsertLogAsync("Found running Middle instance", LogLevel.Debug);
+            }
+            // Large 인스턴스가 실행 중인지 확인  
+            else if (largeInstance != null && largeInstance.IsTraining())
+            {
+                runningInstance = largeInstance;
+                runningImageSize = ImageSize.Large;
+                Console.WriteLine("Found running Large instance");
+                await _mssqlDbService.InsertLogAsync("Found running Large instance", LogLevel.Debug);
+            }
+            // 둘 다 실행 중이 아니라면 첫 번째로 찾은 인스턴스 사용 (이미지 로딩 중일 수 있음)  
+            else if (middleInstance != null)
+            {
+                runningInstance = middleInstance;
+                runningImageSize = ImageSize.Middle;
+                Console.WriteLine("Using Middle instance (may be in image loading phase)");
+                await _mssqlDbService.InsertLogAsync("Using Middle instance (may be in image loading phase)", LogLevel.Debug);
+            }
+            else if (largeInstance != null)
+            {
+                runningInstance = largeInstance;
+                runningImageSize = ImageSize.Large;
+                Console.WriteLine("Using Large instance (may be in image loading phase)");
+                await _mssqlDbService.InsertLogAsync("Using Large instance (may be in image loading phase)", LogLevel.Debug);
             }
 
-            instance.StopTraining();
-            SingletonAiDuo.Reset(imageSize);
-            ToolStatusManager.SetProcessRunning(false);
-            await _mssqlDbService.InsertLogAsync("Training stopped", LogLevel.Debug);
-            return Ok("Processing completed successfully.");
+            if (runningInstance == null)
+            {
+                await _mssqlDbService.InsertLogAsync("No running or available training instance found", LogLevel.Warning);
+                return BadRequest(new NewRecord("No running or available training instance found."));
+            }
+            else
+            {
+                // 훈련 중단 및 완전한 리소스 해제  
+                Console.WriteLine($"Stopping {runningImageSize} training and disposing all resources...");
+                await _mssqlDbService.InsertLogAsync($"Stopping {runningImageSize} training and disposing all resources", LogLevel.Information);
+
+                // 1. 훈련 중단 (이미지 로딩 중이라면 즉시 중단)  
+                runningInstance.StopTraining();
+                await _mssqlDbService.InsertLogAsync("Training stopped", LogLevel.Debug);
+
+                // 2. 임시 이미지 파일 정리  
+                runningInstance.CleanupTempImages();
+                await _mssqlDbService.InsertLogAsync("Temporary images cleaned up", LogLevel.Debug);
+
+                // 3. 모든 리소스 해제 (메모리, GPU 등)  
+                runningInstance.DisposeTool();
+                await _mssqlDbService.InsertLogAsync("All resources disposed", LogLevel.Debug);
+
+                // 4. 싱글톤 인스턴스 리셋  
+                SingletonAiDuo.Reset(runningImageSize);
+                await _mssqlDbService.InsertLogAsync("Singleton instance reset", LogLevel.Debug);
+
+                // 5. 프로세스 실행 상태 해제  
+                ToolStatusManager.SetProcessRunning(false);
+                await _mssqlDbService.InsertLogAsync("Process status set to not running", LogLevel.Debug);
+
+                Console.WriteLine($"{runningImageSize} training stopped and all resources disposed successfully");
+                await _mssqlDbService.InsertLogAsync($"{runningImageSize} training stopped and all resources disposed successfully", LogLevel.Information);
+
+                return Ok(new
+                {
+                    Message = "Training stopped and all resources disposed successfully",
+                    ImageSize = runningImageSize.ToString(),
+                    Status = "Success"
+                });
+            }
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            Console.WriteLine($"Error during stop and dispose: {e}");
+            await _mssqlDbService.InsertLogAsync($"Error during stop and dispose: {e.Message}", LogLevel.Error);
             throw;
         }
     }
@@ -524,28 +614,6 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         Dictionary<string, float> trainingResult = instance.GetTrainingResult();
 
         return Ok(trainingResult);
-    }
-
-    /// <summary>
-    /// 특정 이미지 크기의 AI 인스턴스를 해제합니다.
-    /// </summary>
-    /// <param name="imageSize">
-    /// 해제할 인스턴스의 이미지 크기:
-    /// - Middle(0): 중간 크기 이미지
-    /// - Large(1): 큰 크기 이미지
-    /// </param>
-    /// <returns>인스턴스 해제 성공 메시지</returns>
-    [HttpDelete("dispose/{imageSize}")]
-    public IActionResult DisposeInstance([FromRoute] ImageSize imageSize)
-    {
-        var instance = SingletonAiDuo.GetInstance(imageSize);
-        if (instance != null)
-        {
-            instance.DisposeTool();
-            SingletonAiDuo.Reset(imageSize);
-        }
-
-        return Ok("The tool disposed successfully");
     }
 
     /// <summary>
@@ -582,107 +650,269 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     }
 
     /// <summary>
-    /// 특정 훈련 기록에 대한 모든 혼동 행렬 데이터를 저장합니다.
+    /// ⚠️ DEPRECATED: 이 API는 더 이상 필요하지 않습니다. 
+    /// TrainingImageResult 테이블이 자동으로 생성되므로 별도의 저장이 불필요합니다.
     /// </summary>
-    /// <param name="trainingRecordId">혼동 행렬을 저장할 훈련 기록 ID</param>
-    /// <param name="categories">분류 카테고리 배열 (OK는 자동으로 추가됨)</param>
-    /// <returns>성공 및 오류 횟수를 포함한 처리 결과</returns>
+    /// <param name="trainingRecordId">훈련 기록 ID</param>
+    /// <param name="categories">분류 카테고리 배열</param>
+    /// <returns>성공 메시지</returns>
     [HttpPost("saveConfusionMatrix/{trainingRecordId}")]
     [AuthorizeByRole(UserRoleType.Operator, UserRoleType.Manager, UserRoleType.PROCEngineer, UserRoleType.ServiceEngineer)]
     public async Task<IActionResult> SaveConfusionMatrix([FromRoute] int trainingRecordId, [FromBody] string[] categories)
     {
-        try
+        await _mssqlDbService.InsertLogAsync($"DEPRECATED API called: saveConfusionMatrix for training record {trainingRecordId}", LogLevel.Warning);
+
+        return Ok(new
         {
-            await _mssqlDbService.InsertLogAsync("Saving confusion matrix for training record " + trainingRecordId, LogLevel.Information);
-
-            var instance = SingletonAiDuo.GetInstance(_recordId == trainingRecordId ?
-                await GetImageSizeFromTrainingRecord(trainingRecordId) :
-                ImageSize.Middle); // Default to Middle if not current training
-
-            if (instance == null)
-            {
-                return BadRequest("Training instance not available");
-            }
-
-            // Include OK label in the categories
-            var allCategories = new List<string>(categories) { "OK" };
-            int successCount = 0;
-            int errorCount = 0;
-
-            // Generate and save confusion matrix data
-            foreach (string trueLabel in allCategories)
-            {
-                string trueLabelUpper = trueLabel.ToUpper();
-
-                foreach (string predictedLabel in allCategories)
-                {
-                    string predictedLabelUpper = predictedLabel.ToUpper();
-
-                    try
-                    {
-                        // Use the safe version of GetConfusion that won't throw exceptions
-                        uint count = instance.GetConfusionSafe(trueLabelUpper, predictedLabelUpper);
-
-                        // Only save if count is greater than 0 (optional)
-                        if (count > 0)
-                        {
-                            await _mssqlDbService.SaveConfusionMatrixAsync(trainingRecordId, trueLabelUpper, predictedLabelUpper, count);
-
-                            await _mssqlDbService.InsertLogAsync(
-                                $"Saved confusion matrix: true={trueLabelUpper}, predicted={predictedLabelUpper}, count={count}",
-                                LogLevel.Debug);
-                            successCount++;
-                        }
-                        else
-                        {
-                            await _mssqlDbService.InsertLogAsync(
-                                $"Skipped confusion matrix with zero count: true={trueLabelUpper}, predicted={predictedLabelUpper}",
-                                LogLevel.Debug);
-                            errorCount++;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // Log the error but continue processing other categories
-                        await _mssqlDbService.InsertLogAsync(
-                            $"Error getting confusion data for true={trueLabelUpper}, predicted={predictedLabelUpper}: {ex.Message}",
-                            LogLevel.Warning);
-                        errorCount++;
-                    }
-                }
-            }
-
-            return Ok(new
-            {
-                Message = "Confusion matrix data processing completed",
-                SuccessCount = successCount,
-                ErrorCount = errorCount
-            });
-        }
-        catch (Exception ex)
-        {
-            await _mssqlDbService.InsertLogAsync("Error saving confusion matrix: " + ex.Message, LogLevel.Error);
-            return StatusCode(500, "Error saving confusion matrix: " + ex.Message);
-        }
+            Message = "This API is deprecated. TrainingImageResult data is automatically created during training.",
+            Status = "Deprecated",
+            Recommendation = "Use getConfusionMatrix/{trainingRecordId} to retrieve confusion matrix data"
+        });
     }
 
     /// <summary>
-    /// 특정 훈련 기록에 대한 모든 혼동 행렬 데이터를 가져옵니다.
+    /// 🎯 특정 훈련 기록에 대한 혼동 행렬을 동적으로 계산하여 가져옵니다.
+    /// 새로운 단순한 TrainingImageResult 기반 구조
     /// </summary>
     /// <param name="trainingRecordId">혼동 행렬을 가져올 훈련 기록 ID</param>
-    /// <returns>해당 훈련 기록의 모든 혼동 행렬 데이터</returns>
+    /// <returns>동적으로 계산된 혼동 행렬 데이터</returns>
     [HttpGet("getConfusionMatrix/{trainingRecordId}")]
     public async Task<IActionResult> GetConfusionMatrix([FromRoute] int trainingRecordId)
     {
         try
         {
-            var matrices = await _mssqlDbService.GetConfusionMatricesAsync(trainingRecordId);
-            return Ok(matrices);
+            var matrices = await _mssqlDbService.GetTrainingConfusionMatrixAsync(trainingRecordId);
+            return Ok(new
+            {
+                TrainingRecordId = trainingRecordId,
+                ConfusionMatrix = matrices,
+                Message = "Dynamically calculated from TrainingImageResult table"
+            });
         }
         catch (Exception ex)
         {
             await _mssqlDbService.InsertLogAsync("Error retrieving confusion matrix: " + ex.Message, LogLevel.Error);
             return StatusCode(500, "Error retrieving confusion matrix: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 🎯 특정 혼동 행렬 항목에 해당하는 이미지들을 가져옵니다.
+    /// 새로운 단순한 TrainingImageResult 기반 구조
+    /// </summary>
+    /// <param name="trainingRecordId">훈련 기록 ID</param>
+    /// <param name="trueLabel">실제 레이블 (예: "OK", "NG" 등)</param>
+    /// <param name="predictedLabel">예측 레이블 (예: "OK", "NG" 등)</param>
+    /// <returns>해당 혼동 행렬 항목의 이미지 목록</returns>
+    [HttpGet("getConfusionMatrixImages/{trainingRecordId}/{trueLabel}/{predictedLabel}")]
+    public async Task<IActionResult> GetConfusionMatrixImages([FromRoute] int trainingRecordId, [FromRoute] string trueLabel, [FromRoute] string predictedLabel)
+    {
+        try
+        {
+            await _mssqlDbService.InsertLogAsync($"Getting training images for {trainingRecordId}, true: {trueLabel}, predicted: {predictedLabel}", LogLevel.Information);
+
+            var images = await _mssqlDbService.GetTrainingImagesByLabelsAsync(trainingRecordId, trueLabel, predictedLabel);
+
+            return Ok(new
+            {
+                TrainingRecordId = trainingRecordId,
+                TrueLabel = trueLabel,
+                PredictedLabel = predictedLabel,
+                ImageCount = images.Count,
+                Images = images,
+                Message = "Retrieved from simplified TrainingImageResult table"
+            });
+        }
+        catch (Exception ex)
+        {
+            await _mssqlDbService.InsertLogAsync($"Error retrieving training images: {ex.Message}", LogLevel.Error);
+            return StatusCode(500, $"Error retrieving training images: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 🎯 특정 혼동 행렬 항목에 해당하는 이미지 파일 목록을 가져옵니다.
+    /// 새로운 단순한 TrainingImageResult 기반 구조 사용
+    /// </summary>
+    /// <param name="trainingRecordId">훈련 기록 ID</param>
+    /// <param name="trueLabel">실제 레이블</param>
+    /// <param name="predictedLabel">예측 레이블</param>
+    /// <returns>이미지 파일 목록</returns>
+    [HttpGet("getConfusionMatrixImageFiles/{trainingRecordId}/{trueLabel}/{predictedLabel}")]
+    public async Task<IActionResult> GetConfusionMatrixImageFiles([FromRoute] int trainingRecordId, [FromRoute] string trueLabel, [FromRoute] string predictedLabel)
+    {
+        try
+        {
+            // 🎯 새로운 구조: TrainingImageResult에서 직접 조회
+            var images = await _mssqlDbService.GetTrainingImagesByLabelsAsync(trainingRecordId, trueLabel, predictedLabel);
+
+            // ImageFile 정보만 추출
+            var imageFiles = images.Select(img =>
+            {
+                var imageObj = (dynamic)img;
+                return imageObj.ImageFile;
+            }).ToList();
+
+            return Ok(new
+            {
+                TrainingRecordId = trainingRecordId,
+                TrueLabel = trueLabel,
+                PredictedLabel = predictedLabel,
+                ImageCount = imageFiles.Count,
+                ImageFiles = imageFiles,
+                Message = "Retrieved from simplified TrainingImageResult table"
+            });
+        }
+        catch (Exception ex)
+        {
+            await _mssqlDbService.InsertLogAsync($"Error retrieving image files: {ex.Message}", LogLevel.Error);
+            return StatusCode(500, $"Error retrieving image files: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 🎯 훈련에 사용된 이미지들에 대해 모델 추론을 실행하고 TrainingImageResult 테이블에 저장합니다.
+    /// 기존의 복잡한 ConfusionMatrix + ConfusionMatrixImage 구조를 단순화
+    /// </summary>
+    [NonAction]
+    private async Task SaveConfusionMatrixImages(int trainingRecordId, List<string> allCategories, TrainingAi instance, ImageSize imageSize)
+    {
+        try
+        {
+            await _mssqlDbService.InsertLogAsync("🚀 Starting TrainingImageResult data processing...", LogLevel.Information);
+            Console.WriteLine("🔍 DEBUG: Starting TrainingImageResult data processing...");
+
+            // 훈련에 사용된 이미지 기록 가져오기
+            var trainingImageRecords = instance.GetTrainingImageRecords();
+
+            Console.WriteLine($"🔍 DEBUG: Retrieved {trainingImageRecords.Count} training image records");
+
+            if (trainingImageRecords.Count == 0)
+            {
+                Console.WriteLine("⚠️ WARNING: No training image records found - skipping TrainingImageResult processing");
+                await _mssqlDbService.InsertLogAsync("No training image records found - skipping TrainingImageResult processing", LogLevel.Warning);
+                return;
+            }
+
+            // 🔍 DEBUG: 데이터베이스에 저장된 ImageFile 레코드들 확인
+            try
+            {
+                var allImageFiles = await _mssqlDbService.GetAllImageFilesForTrainingAsync(trainingRecordId);
+                Console.WriteLine($"🔍 DEBUG: Found {allImageFiles.Count} ImageFile records in database for this training");
+                foreach (var dbFile in allImageFiles.Take(5)) // 처음 5개만 로깅
+                {
+                    Console.WriteLine($"🔍 DEBUG: DB ImageFile - Name: {dbFile.Name}, Directory: {dbFile.Directory}, AdmsProcessId: {dbFile.AdmsProcessId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"🔍 DEBUG: Error retrieving ImageFile records: {ex.Message}");
+            }
+
+            int processedCount = 0;
+            int savedCount = 0;
+            int errorCount = 0;
+
+            // 훈련에 사용된 이미지들을 배치로 처리
+            var imageRecordBatches = trainingImageRecords.Chunk(50); // 50개씩 배치 처리
+
+            foreach (var batch in imageRecordBatches)
+            {
+                Console.WriteLine($"🔍 DEBUG: Processing batch of {batch.Count()} images...");
+
+                var batchTasks = batch.Select(async imageRecord =>
+                {
+                    try
+                    {
+                        processedCount++;
+                        Console.WriteLine($"🔍 DEBUG: Processing image {processedCount}: {imageRecord.imagePath}");
+
+                        // 이미지 파일이 존재하는지 확인
+                        if (!System.IO.File.Exists(imageRecord.imagePath))
+                        {
+                            Console.WriteLine($"⚠️ WARNING: Image file not found: {imageRecord.imagePath}");
+                            return;
+                        }
+
+                        // 모델 추론 실행
+                        var classifyResult = instance.Classify(imageRecord.imagePath);
+                        string predictedLabel = classifyResult.BestLabel?.ToUpper() ?? "UNKNOWN";
+                        float confidence = classifyResult.BestScore;
+
+                        Console.WriteLine($"🔍 DEBUG: Image {Path.GetFileName(imageRecord.imagePath)} - True: {imageRecord.trueLabel}, Predicted: {predictedLabel}, Confidence: {confidence:F3}");
+
+                        // ImageFile 레코드 찾기
+                        var fileName = Path.GetFileName(imageRecord.imagePath);
+                        var directory = _mssqlDbService.ConvertToRelativePath(Path.GetDirectoryName(imageRecord.imagePath) ?? "");
+
+                        Console.WriteLine($"🔍 DEBUG: Looking for ImageFile - FileName: {fileName}, Directory: {directory}");
+
+                        // NG 이미지와 OK 이미지를 구분하여 검색
+                        ImageFile? imageFile = null;
+                        if (imageRecord.trueLabel == "OK")
+                        {
+                            // OK 이미지: AdmsProcessId로 검색
+                            Console.WriteLine($"🔍 DEBUG: Searching OK image with AdmsProcessId: {imageRecord.admsProcessId}");
+                            imageFile = await _mssqlDbService.FindImageFileAsync(fileName, directory, imageRecord.admsProcessId);
+                        }
+                        else
+                        {
+                            // NG 이미지: Category로 검색
+                            Console.WriteLine($"🔍 DEBUG: Searching NG image with Category: {imageRecord.trueLabel}");
+                            imageFile = await _mssqlDbService.FindImageFileAsync(fileName, directory, category: imageRecord.trueLabel);
+                        }
+
+                        if (imageFile != null)
+                        {
+                            Console.WriteLine($"✅ DEBUG: Found ImageFile ID: {imageFile.Id} for {fileName}");
+
+                            // 🎯 새로운 단순한 구조: 직접 TrainingImageResult에 저장
+                            // NG 이미지와 OK 이미지 구분하여 저장
+                            string? category = imageRecord.trueLabel != "OK" ? imageRecord.trueLabel : null;
+                            int? admsProcessId = imageRecord.trueLabel == "OK" ? imageRecord.admsProcessId : null;
+
+                            await _mssqlDbService.SaveTrainingImageResultAsync(
+                                trainingRecordId,
+                                imageFile.Id,
+                                imageRecord.trueLabel,
+                                predictedLabel,
+                                confidence,
+                                "Predicted", // 모델 추론 결과
+                                category,
+                                admsProcessId);
+
+                            savedCount++;
+                            Console.WriteLine($"✅ DEBUG: Saved TrainingImageResult for {Path.GetFileName(imageRecord.imagePath)} (ID: {imageFile.Id})");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"⚠️ WARNING: ImageFile not found in database - FileName: {fileName}, Directory: {directory}, AdmsProcessId: {imageRecord.admsProcessId}");
+                            Console.WriteLine($"⚠️ DEBUG: Full image path: {imageRecord.imagePath}");
+                            Console.WriteLine($"⚠️ DEBUG: True label: {imageRecord.trueLabel}, Predicted: {predictedLabel}");
+                            errorCount++;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        Console.WriteLine($"❌ ERROR: Error processing image {imageRecord.imagePath}: {ex.Message}");
+                        await _mssqlDbService.InsertLogAsync($"Error processing image {imageRecord.imagePath}: {ex.Message}", LogLevel.Error);
+                    }
+                });
+
+                // 배치 내의 모든 작업 완료 대기
+                await Task.WhenAll(batchTasks);
+
+                Console.WriteLine($"🔍 DEBUG: Batch completed. Total processed: {processedCount}, Saved: {savedCount}, Errors: {errorCount}");
+            }
+
+            await _mssqlDbService.InsertLogAsync($"TrainingImageResult processing completed - Processed: {processedCount}, Saved: {savedCount}, Errors: {errorCount}", LogLevel.Information);
+            Console.WriteLine($"✅ DEBUG: TrainingImageResult processing completed - Processed: {processedCount}, Saved: {savedCount}, Errors: {errorCount}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ ERROR: Critical error in SaveConfusionMatrixImages: {ex.Message}");
+            await _mssqlDbService.InsertLogAsync($"Critical error in SaveConfusionMatrixImages: {ex.Message}", LogLevel.Error);
         }
     }
 

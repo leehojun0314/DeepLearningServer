@@ -61,22 +61,31 @@ namespace DeepLearningServer.Controllers
                 ToolStatusManager.SetProcessRunning(true);
                 try
                 {
-                    InferenceAi inferenceAi = new InferenceAi(inferenceDto.ModelPath);
-                    string imagePaths = inferenceDto.ImagePath;
-                    EClassificationResult result = inferenceAi.ClassifySingleImage(imagePaths);
-                    Console.WriteLine($"Best label: {result.BestLabel}, Best probability: {result.BestProbability}");
-                    return Ok(new { BestLabel = result.BestLabel, BestProbability = result.BestProbability });
+                    Console.WriteLine($"Starting single image inference with model: {inferenceDto.ModelPath}");
+                    Console.WriteLine($"Image path: {inferenceDto.ImagePath}");
+
+                    using (var inferenceAi = new InferenceAi(inferenceDto.ModelPath))
+                    {
+                        var result = inferenceAi.ClassifySingleImage(inferenceDto.ImagePath);
+                        Console.WriteLine($"Best label: {result.BestLabel}, Best probability: {result.BestProbability}");
+                        return Ok(new { BestLabel = result.BestLabel, BestProbability = result.BestProbability });
+                    }
                 }
                 catch (Exception e)
                 {
-                    return BadRequest(e.Message);
+                    Console.WriteLine($"Error in single inference: {e.Message}");
+                    Console.WriteLine($"Stack trace: {e.StackTrace}");
+                    return BadRequest(new { Error = "Single inference failed", Message = e.Message });
                 }
                 finally
                 {
                     ToolStatusManager.SetProcessRunning(false);
+                    // 가비지 컬렉션 강제 실행
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
                 }
             }
-            return Ok("Inference Controller");
+            return BadRequest(new { Error = "Another process is already running" });
         }
 
         /// <summary>
@@ -98,42 +107,90 @@ namespace DeepLearningServer.Controllers
                 ToolStatusManager.SetProcessRunning(true);
                 try
                 {
-                    InferenceAi inferenceAi = new InferenceAi(inferenceDto.ModelPath);
-                    string[] imagePaths = inferenceDto.ImagePaths;
-                    EClassificationResult[] results = inferenceAi.ClassifyMultipleImages(imagePaths);
+                    Console.WriteLine($"Starting multi image inference with model: {inferenceDto.ModelPath}");
+                    Console.WriteLine($"Number of images: {inferenceDto.ImagePaths?.Length ?? 0}");
 
-                    // 명시적 DTO 사용
-                    var response = results.Select(result => new ClassificationResultDto
+                    if (inferenceDto.ImagePaths == null || inferenceDto.ImagePaths.Length == 0)
                     {
-                        BestLabel = result.BestLabel,
-                        BestProbability = result.BestProbability,
-                        // NumLabels 만큼 순회하여 각 레이블의 이름과 확률을 담음
-                        LabelProbabilities = Enumerable.Range(0, result.NumLabels)
-                          .Select(i =>
-                          {
-                              string label = result.GetLabel(i);
-                              return new LabelProbabilityDto
-                              {
-                                  Label = label,
-                                  Probability = result.GetProbability(label)
-                              };
-                          }).ToArray()
-                    }).ToList();
+                        return BadRequest(new { Error = "Image paths array is null or empty" });
+                    }
 
-                    return Ok(response); // JSON 응답 반환
+                    // 이미지 경로 유효성 사전 검사
+                    for (int i = 0; i < inferenceDto.ImagePaths.Length; i++)
+                    {
+                        if (string.IsNullOrEmpty(inferenceDto.ImagePaths[i]))
+                        {
+                            return BadRequest(new { Error = $"Image path at index {i} is null or empty" });
+                        }
+                        if (!System.IO.File.Exists(inferenceDto.ImagePaths[i]))
+                        {
+                            return BadRequest(new { Error = $"Image file not found at index {i}: {inferenceDto.ImagePaths[i]}" });
+                        }
+                    }
+
+                    using (var inferenceAi = new InferenceAi(inferenceDto.ModelPath))
+                    {
+                        var results = inferenceAi.ClassifyMultipleImages(inferenceDto.ImagePaths);
+
+                        if (results == null)
+                        {
+                            return BadRequest(new { Error = "Classification returned null results" });
+                        }
+
+                        // 명시적 DTO 사용
+                        var response = results.Select((result, index) => 
+                        {
+                            try
+                            {
+                                return new ClassificationResultDto
+                                {
+                                    BestLabel = result.BestLabel,
+                                    BestProbability = result.BestProbability,
+                                    // NumLabels 만큼 순회하여 각 레이블의 이름과 확률을 담음
+                                    LabelProbabilities = Enumerable.Range(0, result.NumLabels)
+                                      .Select(i =>
+                                      {
+                                          string label = result.GetLabel(i);
+                                          return new LabelProbabilityDto
+                                          {
+                                              Label = label,
+                                              Probability = result.GetProbability(label)
+                                          };
+                                      }).ToArray()
+                                };
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error processing result at index {index}: {ex.Message}");
+                                return new ClassificationResultDto
+                                {
+                                    BestLabel = "ERROR",
+                                    BestProbability = 0.0f,
+                                    LabelProbabilities = new LabelProbabilityDto[0]
+                                };
+                            }
+                        }).ToList();
+
+                        Console.WriteLine($"Successfully processed {response.Count} images");
+                        return Ok(response); // JSON 응답 반환
+                    }
                 }
                 catch (Exception e)
                 {
-                    Console.WriteLine("Error: " + e.Message);
-                    Console.WriteLine("StackTrace: " + e.StackTrace);
-                    return BadRequest(e.Message);
+                    Console.WriteLine($"Error in multi inference: {e.Message}");
+                    Console.WriteLine($"Stack trace: {e.StackTrace}");
+                    return BadRequest(new { Error = "Multi inference failed", Message = e.Message, StackTrace = e.StackTrace });
                 }
                 finally
                 {
                     ToolStatusManager.SetProcessRunning(false);
+                    // 가비지 컬렉션 강제 실행
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    Console.WriteLine("Multi inference process completed and resources cleaned up");
                 }
             }
-            return Ok("Inference Controller");
+            return BadRequest(new { Error = "Another process is already running" });
         }
     }
 }

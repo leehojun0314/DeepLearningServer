@@ -126,6 +126,10 @@ public class Program
             try
             {
                 Console.WriteLine("Starting database migration...");
+
+                // 마이그레이션 실행 전 중복 데이터 정리
+                await CleanupDuplicateImageFiles(dbContext);
+
                 dbContext.Database.Migrate(); // 자동 마이그레이션 실행
                 Console.WriteLine("Database migration completed successfully.");
 
@@ -173,6 +177,80 @@ public class Program
 
         app.Run();
     }
+    static async Task CleanupDuplicateImageFiles(DlServerContext dbContext)
+    {
+        try
+        {
+            Console.WriteLine("Checking for duplicate ImageFiles...");
+
+            // ImageFiles 테이블이 존재하는지 확인
+            var tableExistsSql = @"
+                SELECT COUNT(*) 
+                FROM INFORMATION_SCHEMA.TABLES 
+                WHERE TABLE_NAME = 'ImageFiles'";
+
+            var connection = dbContext.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = tableExistsSql;
+            var tableExists = (int)await command.ExecuteScalarAsync() > 0;
+
+            if (!tableExists)
+            {
+                Console.WriteLine("ImageFiles table does not exist yet. Skipping cleanup.");
+                return;
+            }
+
+            // 중복된 레코드 확인
+            command.CommandText = @"
+                SELECT COUNT(*) 
+                FROM (
+                    SELECT Name, Directory, AdmsProcessId, COUNT(*) as Count
+                    FROM ImageFiles 
+                    GROUP BY Name, Directory, AdmsProcessId
+                    HAVING COUNT(*) > 1
+                ) as Duplicates";
+
+            var duplicateCount = (int)await command.ExecuteScalarAsync();
+
+            if (duplicateCount > 0)
+            {
+                Console.WriteLine($"Found {duplicateCount} groups of duplicate ImageFiles. Cleaning up...");
+
+                // 중복된 레코드 중에서 가장 오래된 것을 제외하고 삭제
+                var cleanupSql = @"
+                    WITH DuplicateRecords AS (
+                        SELECT Id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY Name, Directory, AdmsProcessId 
+                                   ORDER BY Id ASC
+                               ) as RowNum
+                        FROM ImageFiles
+                    )
+                    DELETE FROM ImageFiles 
+                    WHERE Id IN (
+                        SELECT Id 
+                        FROM DuplicateRecords 
+                        WHERE RowNum > 1
+                    )";
+
+                command.CommandText = cleanupSql;
+                var deletedRows = await command.ExecuteNonQueryAsync();
+                Console.WriteLine($"Removed {deletedRows} duplicate ImageFiles records.");
+            }
+            else
+            {
+                Console.WriteLine("No duplicate ImageFiles found.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during ImageFiles cleanup: {ex.Message}");
+            // 중복 정리 실패해도 마이그레이션은 계속 진행
+        }
+    }
+
     static async Task ExecuteSeedScript(DlServerContext dbContext)
     {
         try

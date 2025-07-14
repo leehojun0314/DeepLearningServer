@@ -42,7 +42,18 @@ public partial class DlServerContext : DbContext
     public virtual DbSet<Permission> Permissions { get; set; }
     public virtual DbSet<RolePermission> RolePermissions { get; set; }
     public virtual DbSet<PwdResetRequest> PwdResetRequests { get; set; }
+    /// <summary>
+    /// ⚠️ DEPRECATED: Use TrainingImageResults instead
+    /// </summary>
+    [Obsolete("This DbSet is deprecated. Use TrainingImageResults instead.")]
     public virtual DbSet<ConfusionMatrix> ConfusionMatrices { get; set; }
+
+    /// <summary>
+    /// ⚠️ DEPRECATED: Use TrainingImageResults instead
+    /// </summary>
+    [Obsolete("This DbSet is deprecated. Use TrainingImageResults instead.")]
+    public virtual DbSet<ConfusionMatrixImage> ConfusionMatrixImages { get; set; }
+    public virtual DbSet<TrainingImageResult> TrainingImageResults { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Adm>(entity =>
@@ -95,11 +106,16 @@ public partial class DlServerContext : DbContext
             //entity.HasIndex(e => e.ProcessId, "IX_ImageFiles_ProcessId");
             entity.HasIndex(e => e.AdmsProcessId, "IX_ImageFiles_AdmsProcessId"); // ✅ 새로운 인덱스 추가
 
+            // ✅ 인덱스 추가 (고유 제약조건은 제거 - NG/OK 이미지 구분으로 인해 복잡함)
+            entity.HasIndex(e => new { e.Name, e.Directory, e.AdmsProcessId }, "IX_ImageFiles_Name_Directory_AdmsProcessId");
+            entity.HasIndex(e => new { e.Name, e.Directory, e.Category }, "IX_ImageFiles_Name_Directory_Category");
+
             entity.Property(e => e.CapturedTime).HasColumnType("datetime");
             entity.Property(e => e.Directory).HasMaxLength(255);
             entity.Property(e => e.Name).HasMaxLength(255);
             entity.Property(e => e.Size).HasMaxLength(10);
             entity.Property(e => e.Status).HasMaxLength(50);
+            entity.Property(e => e.Category).HasMaxLength(100).IsRequired(false);
 
             //entity.HasOne(d => d.Adms).WithMany(p => p.ImageFiles).HasForeignKey(d => d.AdmsId);
 
@@ -107,7 +123,7 @@ public partial class DlServerContext : DbContext
             entity.HasOne(d => d.AdmsProcess)
               .WithMany(p => p.ImageFiles)
               .HasForeignKey(d => d.AdmsProcessId)
-              .OnDelete(DeleteBehavior.Cascade);
+              .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<Label>(entity =>
@@ -227,15 +243,70 @@ public partial class DlServerContext : DbContext
         modelBuilder.Entity<ConfusionMatrix>(entity =>
         {
             entity.HasIndex(e => e.TrainingRecordId, "IX_ConfusionMatrices_TrainingRecordId");
-            
+
             entity.Property(e => e.TrueLabel).HasMaxLength(100).IsRequired();
             entity.Property(e => e.PredictedLabel).HasMaxLength(100).IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnType("datetime");
-            
+
             entity.HasOne(d => d.TrainingRecord)
                   .WithMany(p => p.ConfusionMatrices)
                   .HasForeignKey(d => d.TrainingRecordId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ConfusionMatrixImage>(entity =>
+        {
+            entity.HasIndex(e => e.ConfusionMatrixId, "IX_ConfusionMatrixImages_ConfusionMatrixId");
+            entity.HasIndex(e => e.ImageFileId, "IX_ConfusionMatrixImages_ImageFileId");
+
+            entity.Property(e => e.ActualPredictedLabel).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Confidence).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+
+            entity.HasOne(d => d.ConfusionMatrix)
+                  .WithMany(p => p.ConfusionMatrixImages)
+                  .HasForeignKey(d => d.ConfusionMatrixId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(d => d.ImageFile)
+                  .WithMany(p => p.ConfusionMatrixImages)
+                  .HasForeignKey(d => d.ImageFileId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ✅ TrainingImageResult Entity 설정 추가
+        modelBuilder.Entity<TrainingImageResult>(entity =>
+        {
+            entity.HasIndex(e => e.TrainingRecordId, "IX_TrainingImageResults_TrainingRecordId");
+            entity.HasIndex(e => e.ImageFileId, "IX_TrainingImageResults_ImageFileId");
+            entity.HasIndex(e => e.AdmsProcessId, "IX_TrainingImageResults_AdmsProcessId");
+
+            // 성능을 위한 복합 인덱스
+            entity.HasIndex(e => new { e.TrainingRecordId, e.TrueLabel, e.PredictedLabel }, "IX_TrainingImageResults_TrainingRecord_Labels");
+
+            entity.Property(e => e.TrueLabel).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.PredictedLabel).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Category).HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnType("datetime");
+
+            // TrainingRecord와의 관계
+            entity.HasOne(d => d.TrainingRecord)
+                  .WithMany(p => p.TrainingImageResults)
+                  .HasForeignKey(d => d.TrainingRecordId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // ImageFile과의 관계
+            entity.HasOne(d => d.ImageFile)
+                  .WithMany(p => p.TrainingImageResults)
+                  .HasForeignKey(d => d.ImageFileId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // AdmsProcess와의 관계 (nullable) - Cascade 충돌 방지를 위해 NoAction 사용
+            entity.HasOne(d => d.AdmsProcess)
+                  .WithMany()
+                  .HasForeignKey(d => d.AdmsProcessId)
+                  .OnDelete(DeleteBehavior.NoAction);
         });
 
         OnModelCreatingPartial(modelBuilder);
