@@ -1,9 +1,11 @@
 ﻿using DeepLearningServer.Models;
 using DeepLearningServer.Settings;
 using DeepLearningServer.Enums;
+using DeepLearningServer.Dtos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.IO;
 
 namespace DeepLearningServer.Services
 {
@@ -733,6 +735,151 @@ namespace DeepLearningServer.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 파일 시스템의 NG 이미지(\"NG/BASE\", \"NG/NEW\")를 스캔하여 데이터베이스의 ImageFiles 테이블과 동기화합니다.
+        /// - NG 이미지는 AdmsProcessId를 null로 저장합니다
+        /// - 카테고리는 경로의 NG/{BASE|NEW}/{category}에서 추출하여 대문자로 저장합니다
+        /// - Size는 Middle/Large 문자열로 저장합니다
+        /// - Status는 Base/New로 저장합니다
+        /// </summary>
+        public async Task<NgSyncResult> SyncNgImagesAsync(ImageSize imageSize, string imageRootPath)
+        {
+            var result = new NgSyncResult
+            {
+                ImageSize = imageSize == ImageSize.Middle ? "Middle" : "Large",
+                ImageRoot = imageRootPath
+            };
+
+            if (string.IsNullOrWhiteSpace(imageRootPath) || !Directory.Exists(imageRootPath))
+            {
+                result.Errors.Add($"Image root path does not exist: {imageRootPath}");
+                return result;
+            }
+
+            string ngBasePath = Path.Combine(imageRootPath, "NG", "BASE");
+            string ngNewPath = Path.Combine(imageRootPath, "NG", "NEW");
+
+            var files = new List<(string filePath, string status)>();
+            if (Directory.Exists(ngBasePath))
+            {
+                foreach (var f in Directory.GetFiles(ngBasePath, "*.jpg", SearchOption.AllDirectories))
+                {
+                    files.Add((f, "Base"));
+                }
+            }
+            if (Directory.Exists(ngNewPath))
+            {
+                foreach (var f in Directory.GetFiles(ngNewPath, "*.jpg", SearchOption.AllDirectories))
+                {
+                    files.Add((f, "New"));
+                }
+            }
+
+            result.TotalFilesScanned = files.Count;
+
+            if (files.Count == 0)
+            {
+                return result;
+            }
+
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+
+            // 미리 존재하는 NG 이미지 키셋 로드 (해당 Size만)
+            var existing = await context.ImageFiles
+                .Where(img => img.Size == result.ImageSize && (img.Directory.Contains("/NG/BASE/") || img.Directory.Contains("/NG/NEW/")))
+                .Select(img => new { img.Name, img.Directory, img.Category })
+                .ToListAsync();
+
+            var existingKeys = new HashSet<string>(existing.Select(e => $"{e.Name}|{e.Directory}|{e.Category}"));
+
+            var toInsert = new List<ImageFile>();
+
+            foreach (var (filePath, status) in files)
+            {
+                try
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    string absoluteDir = Path.GetDirectoryName(filePath) ?? string.Empty;
+                    string relativeDir = ConvertToRelativePath(absoluteDir);
+
+                    // 카테고리 추출: AI_CUT_{SIZE}/NG/{BASE|NEW}/{CATEGORY}/...
+                    string category = ExtractNgCategoryFromRelativeDir(relativeDir);
+                    if (string.IsNullOrEmpty(category))
+                    {
+                        // 카테고리를 추출하지 못하면 스킵
+                        result.Skipped++;
+                        continue;
+                    }
+
+                    string key = $"{fileName}|{relativeDir}|{category}";
+                    if (existingKeys.Contains(key))
+                    {
+                        result.Skipped++;
+                        continue;
+                    }
+
+                    var newImage = new ImageFile
+                    {
+                        Name = fileName,
+                        Directory = relativeDir,
+                        Size = result.ImageSize,
+                        Status = status,
+                        AdmsProcessId = null,
+                        Category = category,
+                        CapturedTime = File.Exists(filePath) ? File.GetCreationTime(filePath) : DateTime.Now
+                    };
+
+                    toInsert.Add(newImage);
+
+                    result.Inserted++;
+                    if (!result.InsertedByCategory.ContainsKey(category))
+                    {
+                        result.InsertedByCategory[category] = 0;
+                    }
+                    result.InsertedByCategory[category]++;
+
+                    // 중복 방지를 위해 키셋에 즉시 추가
+                    existingKeys.Add(key);
+                }
+                catch (Exception ex)
+                {
+                    result.Errors.Add(ex.Message);
+                }
+            }
+
+            if (toInsert.Count > 0)
+            {
+                using var tx = await context.Database.BeginTransactionAsync();
+                try
+                {
+                    await context.ImageFiles.AddRangeAsync(toInsert);
+                    await context.SaveChangesAsync();
+                    await tx.CommitAsync();
+                }
+                catch (Exception ex)
+                {
+                    await tx.RollbackAsync();
+                    result.Errors.Add($"DB save failed: {ex.Message}");
+                    // 실패시 삽입 수를 롤백하지는 않지만, 호출자가 오류를 확인할 수 있도록 유지
+                }
+            }
+
+            return result;
+        }
+
+        private static string ExtractNgCategoryFromRelativeDir(string relativeDir)
+        {
+            if (string.IsNullOrEmpty(relativeDir)) return string.Empty;
+            var parts = relativeDir.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            int ngIndex = Array.FindIndex(parts, p => string.Equals(p, "NG", StringComparison.OrdinalIgnoreCase));
+            if (ngIndex >= 0 && ngIndex + 2 < parts.Length)
+            {
+                // parts[ngIndex + 1] == BASE|NEW, parts[ngIndex + 2] == category
+                return parts[ngIndex + 2].ToUpperInvariant();
+            }
+            return string.Empty;
         }
     }
 }

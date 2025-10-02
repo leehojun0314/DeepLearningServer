@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using DeepLearningServer.Settings;
 using DeepLearningServer.Enums;
 using DeepLearningServer.Services;
+using DeepLearningServer.Dtos;
 using System.Linq;
 
 namespace DeepLearningServer.Controllers
@@ -82,6 +83,50 @@ namespace DeepLearningServer.Controllers
                     Error = "Failed to retrieve categories from database",
                     Message = ex.Message
                 });
+            }
+        }
+
+        /// <summary>
+        /// 파일 시스템과 DB를 동기화하여 NG 이미지들을 ImageFiles 테이블에 등록합니다.
+        /// NG 경로 형식: {AI_CUT_MIDDLE|AI_CUT_LARGE}/NG/{NEW|BASE}/{category}/{*.jpg}
+        /// </summary>
+        [HttpPost("sync-ng/{imageSize}")]
+        public async Task<IActionResult> SyncNgImages([FromRoute] ImageSize imageSize)
+        {
+            try
+            {
+                var imageRoot = imageSize switch
+                {
+                    ImageSize.Middle => _serverSettings.MiddleImagePath,
+                    ImageSize.Large => _serverSettings.LargeImagePath,
+                    _ => throw new Exception($"Invalid image size: {imageSize}")
+                };
+
+                if (string.IsNullOrWhiteSpace(imageRoot))
+                {
+                    return BadRequest($"Image path not configured for size: {imageSize}");
+                }
+
+                var syncResult = await _mssqlDbService.SyncNgImagesAsync(imageSize, imageRoot);
+
+                // 동기화 후 최신 카테고리 카운트 재조회
+                string sizeString = imageSize == ImageSize.Middle ? "Middle" : "Large";
+                var categoryCounts = await _mssqlDbService.GetNgCategoriesImageCountAsync(sizeString);
+                int totalImages = categoryCounts.Values.Sum();
+
+                return Ok(new
+                {
+                    Sync = syncResult,
+                    Categories = categoryCounts.Keys.OrderBy(x => x).ToArray(),
+                    CategoryCounts = categoryCounts,
+                    TotalImages = totalImages,
+                    Source = "Database"
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error syncing NG images: {ex.Message}");
+                return StatusCode(500, new { Error = "Failed to sync NG images", Message = ex.Message });
             }
         }
 
