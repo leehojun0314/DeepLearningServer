@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.Options;
 using SharpCompress.Common;
 using System.Text.RegularExpressions;
+using System.Net.Http;
+using System.Net.Http.Headers;
 
 /// <summary>
 /// 딥러닝 모델 관리 기능을 제공하는 컨트롤러입니다.
@@ -18,28 +20,36 @@ namespace DeepLearningServer.Controllers
     {
         private readonly ServerSettings _serverSettings = serverSettings.Value;
 
+        // Change the access modifier of the CopyFileRequest class from 'private' to 'public'
+        public sealed class CopyFileRequest
+        {
+            public string? SourcePath { get; set; }
+            public string? DestinationPath { get; set; }
+            public bool Move { get; set; } = false;
+        }
+
+        public sealed class SendRemoteRequest
+        {
+            public string? LocalPath { get; set; }
+            public string? RemoteIp { get; set; } // ex) 192.168.0.10:5000 또는 192.168.0.10
+            public string? RemoteDestinationPath { get; set; } // 원격 서버의 ModelController.Upload 에서 사용될 ModelPath
+        }
+
         /// <summary>
         /// 저장된 딥러닝 모델 파일들을 조회합니다.
         /// </summary>
         /// <param name="size">이미지 크기 필터 (LARGE, MIDDLE, 또는 전체 조회시 생략)</param>
-        /// <param name="type">모델 타입 필터 (BASE, Release, EVALUATION, 또는 전체 조회시 생략)</param>
-        /// <param name="admsName">ADMS 이름 필터 (특정 ADMS만 조회시 사용)</param>
-        /// <param name="processId">프로세스 ID 필터 (특정 프로세스만 조회시 사용)</param>
         /// <returns>필터 조건에 맞는 모델 파일 목록</returns>
         /// <response code="200">모델 조회 성공</response>
         /// <response code="400">잘못된 필터 조건</response>
         /// <response code="500">서버 내부 오류</response>
         [HttpGet("list")]
         public IActionResult GetModels(
-            [FromQuery] string? size = null,
-            [FromQuery] string? type = null, 
-            [FromQuery] string? admsName = null,
-            [FromQuery] string? processId = null)
+            [FromQuery] string? size = null)
         {
             try
             {
                 var validSizes = new[] { "LARGE", "MIDDLE" };
-                var validTypes = new[] { "BASE", "Release", "EVALUATION" };
 
                 // 파라미터 유효성 검사
                 if (!string.IsNullOrEmpty(size) && !validSizes.Contains(size.ToUpper()))
@@ -47,71 +57,67 @@ namespace DeepLearningServer.Controllers
                     return BadRequest($"Invalid size parameter. Valid values: {string.Join(", ", validSizes)}");
                 }
 
-                if (!string.IsNullOrEmpty(type) && !validTypes.Contains(type))
-                {
-                    return BadRequest($"Invalid type parameter. Valid values: {string.Join(", ", validTypes)}");
-                }
-
                 var models = new List<ModelInfoDto>();
                 string baseModelDirectory = _serverSettings.ModelDirectory;
 
-                // 경로 구조: D:/Transfer/{SIZE}/{TYPE}/{AdmsName}/{ProcessId}.edltool
+                // 경로 구조 예시: D:/Transfer/{SIZE}/{TYPE}/{AdmsName}/{ProcessId}.edltool
                 var searchSizes = string.IsNullOrEmpty(size) ? validSizes : new[] { size.ToUpper() };
-                var searchTypes = string.IsNullOrEmpty(type) ? validTypes : new[] { type };
 
                 foreach (var searchSize in searchSizes)
                 {
-                    foreach (var searchType in searchTypes)
+                    string searchPath = Path.Combine(baseModelDirectory, searchSize);
+
+                    if (!Directory.Exists(searchPath))
+                        continue;
+
+                    // 하위 모든 디렉토리를 재귀적으로 탐색하여 .edltool 파일 수집
+                    var modelFiles = Directory.GetFiles(searchPath, "*.edltool", SearchOption.AllDirectories);
+
+                    foreach (var modelFile in modelFiles)
                     {
-                        string searchPath = Path.Combine(baseModelDirectory, searchSize, searchType);
-                        
-                        if (!Directory.Exists(searchPath))
-                            continue;
+                        var fileInfo = new FileInfo(modelFile);
+                        var fileName = fileInfo.Name;
+                        var currentProcessId = Path.GetFileNameWithoutExtension(fileName);
 
-                        // ADMS 폴더들 탐색
-                        var admsDirectories = Directory.GetDirectories(searchPath);
-                        
-                        foreach (var admsDir in admsDirectories)
+                        var relativePathRaw = Path.GetRelativePath(baseModelDirectory, modelFile);
+                        var relativePath = relativePathRaw.Replace('\\', '/');
+
+                        // 경로로부터 Type/AdmsName 추론 (Type 디렉토리가 있을 수도/없을 수도 있음)
+                        string? inferredType = null;
+                        string? inferredAdmsName = null;
+                        var parts = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                        // parts[0] = Size
+                        // 타입 후보
+                        var knownTypes = new[] { "BASE", "Release", "EVALUATION" };
+                        if (parts.Length >= 3 && knownTypes.Contains(parts[1]))
                         {
-                            var currentAdmsName = Path.GetFileName(admsDir);
-                            
-                            // ADMS 이름 필터링
-                            if (!string.IsNullOrEmpty(admsName) && !currentAdmsName.Equals(admsName, StringComparison.OrdinalIgnoreCase))
-                                continue;
-
-                            // .edltool 파일들 찾기
-                            var modelFiles = Directory.GetFiles(admsDir, "*.edltool");
-                            
-                            foreach (var modelFile in modelFiles)
-                            {
-                                var fileInfo = new FileInfo(modelFile);
-                                var fileName = fileInfo.Name;
-                                var currentProcessId = Path.GetFileNameWithoutExtension(fileName);
-                                
-                                // 프로세스 ID 필터링
-                                if (!string.IsNullOrEmpty(processId) && !currentProcessId.Equals(processId, StringComparison.OrdinalIgnoreCase))
-                                    continue;
-
-                                var relativePath = Path.GetRelativePath(baseModelDirectory, modelFile);
-                                
-                                var modelDto = new ModelInfoDto
-                                {
-                                    FileName = fileName,
-                                    FullPath = modelFile,
-                                    RelativePath = relativePath.Replace('\\', '/'),
-                                    Size = searchSize,
-                                    Type = searchType,
-                                    AdmsName = currentAdmsName,
-                                    ProcessId = currentProcessId,
-                                    FileSizeBytes = fileInfo.Length,
-                                    FileSizeFormatted = FormatFileSize(fileInfo.Length),
-                                    CreatedDate = fileInfo.CreationTime,
-                                    ModifiedDate = fileInfo.LastWriteTime
-                                };
-                                
-                                models.Add(modelDto);
-                            }
+                            // Size/Type/AdmsName/File
+                            inferredType = parts[1];
+                            inferredAdmsName = parts[2];
                         }
+                        else if (parts.Length >= 2)
+                        {
+                            // Size/AdmsName/File (Type 생략된 구조)
+                            inferredType = null;
+                            inferredAdmsName = parts[1];
+                        }
+
+                        var modelDto = new ModelInfoDto
+                        {
+                            FileName = fileName,
+                            FullPath = modelFile,
+                            RelativePath = relativePath,
+                            Size = searchSize,
+                            Type = inferredType,
+                            AdmsName = inferredAdmsName,
+                            ProcessId = currentProcessId,
+                            FileSizeBytes = fileInfo.Length,
+                            FileSizeFormatted = FormatFileSize(fileInfo.Length),
+                            CreatedDate = fileInfo.CreationTime,
+                            ModifiedDate = fileInfo.LastWriteTime
+                        };
+
+                        models.Add(modelDto);
                     }
                 }
 
@@ -128,10 +134,7 @@ namespace DeepLearningServer.Controllers
                     Count = models.Count,
                     Filters = new
                     {
-                        Size = size,
-                        Type = type,
-                        AdmsName = admsName,
-                        ProcessId = processId
+                        Size = size
                     },
                     Models = models
                 });
@@ -152,13 +155,13 @@ namespace DeepLearningServer.Controllers
             string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
             int counter = 0;
             decimal number = bytes;
-            
+
             while (Math.Round(number / 1024) >= 1)
             {
                 number /= 1024;
                 counter++;
             }
-            
+
             return string.Format("{0:n1} {1}", number, suffixes[counter]);
         }
 
@@ -302,6 +305,158 @@ namespace DeepLearningServer.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { Message = "Error on upgrading model.", Error = ex.Message });
+            }
+        }
+
+        /// <summary>
+		/// 지정된 파일을 목적지로 복사하거나 이동합니다. 상대 경로는 모델 기본 경로 기준입니다.
+        /// </summary>
+		/// <param name="request">SourcePath, DestinationPath, Move</param>
+		/// <returns>복사/이동 결과</returns>
+		/// <response code="200">복사/이동 성공</response>
+        /// <response code="400">요청 값 오류</response>
+        /// <response code="404">원본 파일 없음</response>
+        /// <response code="500">서버 내부 오류</response>
+        [HttpPost("copy-file")]
+        public IActionResult CopyFile([FromBody] CopyFileRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.SourcePath) || string.IsNullOrWhiteSpace(request.DestinationPath))
+                {
+                    return BadRequest("SourcePath and DestinationPath are required.");
+                }
+
+                string sourcePath = request.SourcePath;
+                string destinationPath = request.DestinationPath;
+
+                if (!Path.IsPathRooted(sourcePath))
+                {
+                    sourcePath = Path.Combine(_serverSettings.ModelDirectory, sourcePath);
+                }
+
+                if (!Path.IsPathRooted(destinationPath))
+                {
+                    destinationPath = Path.Combine(_serverSettings.ModelDirectory, destinationPath);
+                }
+
+                if (!System.IO.File.Exists(sourcePath))
+                {
+                    return NotFound(new { Message = "Source file not found.", SourcePath = sourcePath });
+                }
+
+                string? destDir = Path.GetDirectoryName(destinationPath);
+                if (string.IsNullOrEmpty(destDir))
+                {
+                    return BadRequest("Destination directory could not be determined.");
+                }
+
+                if (!Directory.Exists(destDir))
+                {
+                    Directory.CreateDirectory(destDir);
+                }
+
+                if (request.Move)
+                {
+                    System.IO.File.Move(sourcePath, destinationPath, true);
+                }
+                else
+                {
+                    System.IO.File.Copy(sourcePath, destinationPath, true);
+                }
+
+                var fileInfo = new FileInfo(destinationPath);
+                return Ok(new
+                {
+                    Message = request.Move ? "File moved successfully." : "File copied successfully.",
+                    Operation = request.Move ? "MOVE" : "COPY",
+                    SourcePath = sourcePath,
+                    DestinationPath = destinationPath,
+                    FileSizeBytes = fileInfo.Length
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "Error copying file.", Error = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// 현재 서버의 로컬 파일을 지정한 원격 서버로 업로드합니다.
+        /// 원격 서버에서는 /api/model/upload 엔드포인트를 사용합니다.
+        /// </summary>
+        /// <param name="request">LocalPath(로컬 파일 경로), RemoteIp(원격 서버 IP:포트), RemoteDestinationPath(원격 서버에서의 저장 경로)</param>
+        /// <returns>원격 업로드 결과</returns>
+        /// <response code="200">업로드 성공</response>
+        /// <response code="400">요청 값 오류</response>
+        /// <response code="404">로컬 파일 없음</response>
+        /// <response code="502">원격 서버 응답 오류</response>
+        [HttpPost("send-remote")]
+        public async Task<IActionResult> SendToRemote([FromBody] SendRemoteRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrWhiteSpace(request.LocalPath) || string.IsNullOrWhiteSpace(request.RemoteIp) || string.IsNullOrWhiteSpace(request.RemoteDestinationPath))
+                {
+                    return BadRequest("LocalPath, RemoteIp and RemoteDestinationPath are required.");
+                }
+
+                string localPath = request.LocalPath;
+                if (!Path.IsPathRooted(localPath))
+                {
+                    localPath = Path.Combine(_serverSettings.ModelDirectory, localPath);
+                }
+
+                if (!System.IO.File.Exists(localPath))
+                {
+                    return NotFound(new { Message = "Local file not found.", LocalPath = localPath });
+                }
+
+                using (var client = new HttpClient())
+                {
+                    using (var form = new MultipartFormDataContent())
+                    {
+                        byte[] fileBytes = await System.IO.File.ReadAllBytesAsync(localPath);
+                        var fileContent = new ByteArrayContent(fileBytes);
+                        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                        string fileName = Path.GetFileName(localPath);
+                        form.Add(fileContent, "File", fileName);
+                        form.Add(new StringContent(request.RemoteDestinationPath), "ModelPath");
+
+                        string apiUrl = $"http://{request.RemoteIp}/api/model/upload";
+                        HttpResponseMessage response = await client.PostAsync(apiUrl, form);
+
+                        string responseBody = await response.Content.ReadAsStringAsync();
+                        if (response.IsSuccessStatusCode)
+                        {
+                            return Ok(new
+                            {
+                                Message = "Remote upload succeeded.",
+                                RemoteServer = request.RemoteIp,
+                                LocalPath = localPath,
+                                RemoteDestinationPath = request.RemoteDestinationPath,
+                                RemoteStatusCode = (int)response.StatusCode,
+                                RemoteResponse = responseBody
+                            });
+                        }
+                        else
+                        {
+                            return StatusCode(502, new
+                            {
+                                Message = "Remote upload failed.",
+                                RemoteServer = request.RemoteIp,
+                                LocalPath = localPath,
+                                RemoteDestinationPath = request.RemoteDestinationPath,
+                                RemoteStatusCode = (int)response.StatusCode,
+                                RemoteResponse = responseBody
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "Error sending file to remote.", Error = ex.Message });
             }
         }
 

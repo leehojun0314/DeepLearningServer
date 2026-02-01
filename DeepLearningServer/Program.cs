@@ -1,8 +1,10 @@
 using DeepLearningServer.Classes;
+using DeepLearningServer.Classes.Logging;
 using DeepLearningServer.Models;
 using DeepLearningServer.Services;
 using DeepLearningServer.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -24,6 +26,14 @@ public class Program
 
         var builder = WebApplication.CreateBuilder(args);
 
+        // Configure file logging (logs/app-YYYY-MM-DD.log)
+        var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
+        var fileLoggerProvider = new FileLoggerProvider(logsDir, LogLevel.Information);
+        builder.Logging.ClearProviders();
+        builder.Logging.AddProvider(fileLoggerProvider);
+        builder.Logging.SetMinimumLevel(LogLevel.Information);
+        ConsoleRedirector.RedirectToLogger(fileLoggerProvider);
+
         // ȯ�� ���� �߰� �� ����
         builder.Configuration.AddEnvironmentVariables();
         builder.Services.Configure<ServerSettings>(builder.Configuration.GetSection("ServerSettings"));
@@ -39,7 +49,12 @@ public class Program
         {
             var dbSettings = builder.Configuration.GetSection("ConnectionStrings").Get<SqlDbSettings>();
             options.UseSqlServer(connectionString,
-                sqlOptions => sqlOptions.MigrationsAssembly(typeof(DlServerContext).Assembly.GetName().Name));
+                sqlOptions =>
+                {
+                    sqlOptions.MigrationsAssembly(typeof(DlServerContext).Assembly.GetName().Name);
+                    // Enable transient fault handling for long-running servers
+                    sqlOptions.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null);
+                });
         });
         //builder.Services.AddSingleton<MongoDbService>(sp =>
         //{
@@ -70,6 +85,16 @@ public class Program
         });
         builder.Services.AddAutoMapper(typeof(TrainingMappingProfile));
         builder.Services.AddControllers();
+        // Register CORS policy referenced by app.UseCors("AllowAll")
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAll", policy =>
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            });
+        });
         //builder.Services.AddOpenApi();
         //builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen(options =>
@@ -140,7 +165,19 @@ public class Program
             }
             catch (Exception error)
             {
-                Console.WriteLine($"Error during database initialization: {error.Message}");
+                // Avoid leaking internal/system details to stdout; log full exception internally.
+                var loggerFactory = scope.ServiceProvider.GetService<ILoggerFactory>();
+                if (loggerFactory != null)
+                {
+                    var logger = loggerFactory.CreateLogger("Startup");
+                    logger.LogError(error, "Database initialization failed.");
+                }
+                else
+                {
+                    // Fallback: still keep details out of stdout, but preserve diagnostics somewhere.
+                    System.Diagnostics.Trace.TraceError($"Database initialization failed: {error.Message}");
+                }
+
             }
         }
         //app.MapOpenApi();
@@ -151,9 +188,15 @@ public class Program
             {
                 version = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "version.txt")).Trim();
             }
-            catch (Exception)
+            catch (IOException ex)
             {
-                // If version.txt is not found or cannot be read, keep default "Unknown"
+                // version.txt is optional; if not found or unreadable, keep default "Unknown"
+                System.Diagnostics.Trace.TraceInformation($"Optional version.txt read failed: {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Permission issues are acceptable for optional version file
+                System.Diagnostics.Trace.TraceInformation($"Optional version.txt read not permitted: {ex.Message}");
             }
 
             return new
@@ -170,7 +213,7 @@ public class Program
         app.UseSwagger();
         app.UseSwaggerUI();
         app.UseCors("AllowAll");
-        app.UseHttpsRedirection();
+        // app.UseHttpsRedirection();
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();
@@ -246,7 +289,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error during ImageFiles cleanup: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Error during ImageFiles cleanup: {ex.Message}");
             // 중복 정리 실패해도 마이그레이션은 계속 진행
         }
     }
@@ -286,8 +329,8 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error executing seed script: {ex.Message}");
-            throw;
+            System.Diagnostics.Debug.WriteLine($"Error executing seed script: {ex.Message}");
+            throw new InvalidOperationException("Failed to execute seed script", ex);
         }
     }
 }

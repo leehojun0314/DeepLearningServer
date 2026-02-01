@@ -20,9 +20,9 @@ namespace DeepLearningServer.Classes
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error loading model: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error loading model: {ex.Message}");
                 classifier?.Dispose();
-                throw;
+                throw new InvalidOperationException("Failed to load model", ex);
             }
         }
 
@@ -40,7 +40,7 @@ namespace DeepLearningServer.Classes
                     throw new Exception($"Image file not found: {imagePath}");
 
                 Console.WriteLine("Has training model");
-                
+
                 using (var eImage = new EImageBW8())
                 {
                     eImage.Load(imagePath);
@@ -51,8 +51,8 @@ namespace DeepLearningServer.Classes
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error on classify: " + e);
-                throw new Exception($"Classification failed for {imagePath}: {e.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error on classify: {e}");
+                throw new InvalidOperationException("Classification failed", e);
             }
         }
 
@@ -86,7 +86,7 @@ namespace DeepLearningServer.Classes
                     for (int i = 0; i < imagePaths.Length; i++)
                     {
                         Console.WriteLine($"Processing image {i + 1}/{imagePaths.Length}: {imagePaths[i]}");
-                        
+
                         try
                         {
                             using (var eImage = new EImageBW8())
@@ -94,26 +94,26 @@ namespace DeepLearningServer.Classes
                                 eImage.Load(imagePaths[i]);
                                 var classifyResult = classifier.Classify(eImage);
                                 results.Add(classifyResult);
-                                
+
                                 Console.WriteLine($"Result {i}: best label '{classifyResult.BestLabel}', best prob {classifyResult.BestProbability}");
-                               
+
                             }
                         }
                         catch (Exception imageEx)
                         {
-                            Console.WriteLine($"Error processing image {i} ({imagePaths[i]}): {imageEx.Message}");
+                            System.Diagnostics.Debug.WriteLine($"Error processing image {i}: {imageEx.Message}");
                             // 개별 이미지 에러 시 null 추가하거나 건너뛰기
                             // results.Add(null); // null 추가하려면 이 라인 활성화
-                            throw new Exception($"Failed to process image {i}: {imageEx.Message}");
+                            throw new InvalidOperationException($"Failed to process image at index {i}", imageEx);
                         }
                     }
-                    
+
                     Console.WriteLine($"Classification completed. Results count: {results.Count}");
                     return results.ToArray();
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"Error during classification: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Error during classification: {ex.Message}");
                     return null;
                 }
                 finally
@@ -127,9 +127,9 @@ namespace DeepLearningServer.Classes
                     }
                     catch (Exception unloadEx)
                     {
-                        Console.WriteLine($"Error unloading models: {unloadEx.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Error unloading models: {unloadEx.Message}");
                     }
-                    
+
                     // 가비지 컬렉션 강제 실행
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
@@ -137,9 +137,8 @@ namespace DeepLearningServer.Classes
             }
             catch (Exception e)
             {
-                Console.WriteLine($"Error on classify multiple images: {e}");
-                Console.WriteLine($"Stack trace: {e.StackTrace}");
-                throw new Exception($"Multiple image classification failed: {e.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error on classify multiple images: {e}");
+                throw new InvalidOperationException("Multiple image classification failed", e);
             }
         }
 
@@ -150,15 +149,15 @@ namespace DeepLearningServer.Classes
 
             if (classifier == null)
                 throw new Exception("Classifier is not initialized");
-                
+
             if (!classifier.HasInferenceModel())
                 throw new Exception("Model is not granted");
-                
+
             if (imagePaths == null || imagePaths.Length == 0)
                 throw new Exception("Invalid image list");
 
             var images = new List<EBaseROI>();
-            
+
             try
             {
                 for (int i = 0; i < imagePaths.Length; i++)
@@ -182,10 +181,10 @@ namespace DeepLearningServer.Classes
                     }
                     catch (Exception disposeEx)
                     {
-                        Console.WriteLine($"Error disposing image: {disposeEx.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Error disposing image: {disposeEx.Message}");
                     }
                 }
-                
+
                 // 모델 언로드
                 try
                 {
@@ -195,7 +194,7 @@ namespace DeepLearningServer.Classes
                 }
                 catch (Exception unloadEx)
                 {
-                    Console.WriteLine($"Error unloading models: {unloadEx.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Error unloading models: {unloadEx.Message}");
                 }
             }
         }
@@ -225,9 +224,9 @@ namespace DeepLearningServer.Classes
                             }
                             catch (Exception unloadEx)
                             {
-                                Console.WriteLine($"Error unloading models during disposal: {unloadEx.Message}");
+                                System.Diagnostics.Debug.WriteLine($"Error unloading models during disposal: {unloadEx.Message}");
                             }
-                            
+
                             // 그 다음 classifier 해제
                             classifier.Dispose();
                             Console.WriteLine("Classifier disposed successfully");
@@ -235,7 +234,7 @@ namespace DeepLearningServer.Classes
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error disposing classifier: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Error disposing classifier: {ex.Message}");
                     }
                 }
                 classifier = null;
@@ -248,4 +247,4 @@ namespace DeepLearningServer.Classes
             Dispose(false);
         }
     }
-} 
+}

@@ -14,7 +14,9 @@ public partial class ProgressEntry
     public double BestIteration { get; set; }
 
     public float? Accuracy { get; set; }
-    
+    public float? ValidationAccuracy { get; set; }
+    public float? ValidationError { get; set; }
+
     public DateTime StartTime { get; set; }
     public DateTime? EndTime { get; set; }
     public double? Duration { get; set; } // Duration in seconds

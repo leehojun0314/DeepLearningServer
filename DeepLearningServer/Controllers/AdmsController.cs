@@ -77,11 +77,10 @@ namespace DeepLearningServer.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting categories from database: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error getting categories from database: {ex.Message}");
                 return StatusCode(500, new
                 {
-                    Error = "Failed to retrieve categories from database",
-                    Message = ex.Message
+                    Error = "Failed to retrieve categories from database"
                 });
             }
         }
@@ -125,8 +124,51 @@ namespace DeepLearningServer.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error syncing NG images: {ex.Message}");
-                return StatusCode(500, new { Error = "Failed to sync NG images", Message = ex.Message });
+                System.Diagnostics.Debug.WriteLine($"Error syncing NG images: {ex.Message}");
+                return StatusCode(500, new { Error = "Failed to sync NG images" });
+            }
+        }
+
+        /// <summary>
+        /// 파일 시스템과 DB를 동기화하여 특정 프로세스의 OK 이미지들을 ImageFiles 테이블에 등록합니다.
+        /// OK 경로 형식: {AI_CUT_MIDDLE|AI_CUT_LARGE}/OK/{processName}/{BASE|NEW}/{*.jpg}
+        /// </summary>
+        [HttpPost("sync-ok/{admsProcessId}/{imageSize}")]
+        public async Task<IActionResult> SyncOkImages([FromRoute] int admsProcessId, [FromRoute] ImageSize imageSize)
+        {
+            try
+            {
+                var imageRoot = imageSize switch
+                {
+                    ImageSize.Middle => _serverSettings.MiddleImagePath,
+                    ImageSize.Large => _serverSettings.LargeImagePath,
+                    _ => throw new Exception($"Invalid image size: {imageSize}")
+                };
+
+                if (string.IsNullOrWhiteSpace(imageRoot))
+                {
+                    return BadRequest($"Image path not configured for size: {imageSize}");
+                }
+
+                var syncResult = await _mssqlDbService.SyncOkImagesByProcessAsync(admsProcessId, imageSize, imageRoot);
+
+                // 동기화 후 최신 OK 카운트 재조회
+                string sizeString = imageSize == ImageSize.Middle ? "Middle" : "Large";
+                var imageDetails = await _mssqlDbService.GetOkImageCountByProcessAsync(admsProcessId, sizeString);
+                int totalImages = imageDetails.Values.Sum();
+
+                return Ok(new
+                {
+                    Sync = syncResult,
+                    ImageDetails = imageDetails,
+                    TotalImages = totalImages,
+                    Source = "Database"
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error syncing OK images: {ex.Message}");
+                return StatusCode(500, new { Error = "Failed to sync OK images" });
             }
         }
 
@@ -202,11 +244,10 @@ namespace DeepLearningServer.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting process image count from database: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error getting process image count from database: {ex.Message}");
                 return StatusCode(500, new
                 {
-                    Error = "Failed to retrieve process image count from database",
-                    Message = ex.Message
+                    Error = "Failed to retrieve process image count from database"
                 });
             }
         }
@@ -306,7 +347,7 @@ namespace DeepLearningServer.Controllers
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error processing AdmsProcessId: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Error processing AdmsProcessId: {ex.Message}");
                         // 개별 프로세스 오류는 무시하고 계속 진행
                     }
                 }
@@ -326,11 +367,10 @@ namespace DeepLearningServer.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error getting bulk process image count from database: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error getting bulk process image count from database: {ex.Message}");
                 return StatusCode(500, new
                 {
-                    Error = "Failed to retrieve bulk process image count from database",
-                    Message = ex.Message
+                    Error = "Failed to retrieve bulk process image count from database"
                 });
             }
         }

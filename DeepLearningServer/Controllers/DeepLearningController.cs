@@ -215,7 +215,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         }
                         ProgressEntry? previousProgressEntry = null;
 
-                        instance.Train(async (isTraining, progress, bestIteration, currentAccuracy, bestAccuracy) =>
+                        instance.Train(async (isTraining, progress, bestIteration, currentAccuracy, bestAccuracy, bestValidationAccuracy, bestValidationError) =>
                         {
                             var now = DateTime.Now;
 
@@ -250,6 +250,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     EndTime = null, // 다음 콜백에서 설정됨
                                     Duration = null, // 다음 콜백에서 계산됨
                                     Accuracy = currentAccuracy,
+                                    ValidationAccuracy = bestValidationAccuracy,
+                                    ValidationError = bestValidationError,
                                     TrainingRecordId = record.Id
                                 };
 
@@ -331,7 +333,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                             // ✅ 새로운 경로 구조: ImageSize에 따라 LARGE 또는 MIDDLE 폴더 사용
                             string sizeFolder = parameterData.ImageSize == ImageSize.Large ? "LARGE" : "MIDDLE";
-                            string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\EVALUATION\\{adms.Name}\\";
+							string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\{adms.Name}\\";
 
                             // ✅ 모델명을 ProcessId.edltool로 변경
                             string modelName = $"{processName}.edltool";

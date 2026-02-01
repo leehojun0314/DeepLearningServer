@@ -1,12 +1,12 @@
 ﻿using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using DeepLearningServer.Models;
 using Microsoft.AspNetCore.Identity.Data;
 using DeepLearningServer.Enums;
-using System.ComponentModel;
 
 /// <summary>
 /// 사용자 인증과 관련된 기능을 제공하는 컨트롤러입니다.
@@ -144,13 +144,12 @@ public class LoginRequest
     /// <summary>
     /// 사용자 아이디
     /// </summary>
-    [DefaultValue("ADMS")]
     public string Username { get; set; }
 
     /// <summary>
     /// 사용자 비밀번호
     /// </summary>
-    [DefaultValue("ADMS007")]
+    [DataType(DataType.Password)]
     public string Password { get; set; }
 }
 
@@ -165,8 +164,9 @@ public class RegisterRequest
     public string Username { get; set; }
 
     /// <summary>
-    /// 등록할 사용자 비밀번호
+    /// 등록할 사용자 비밀번호 (평문)
     /// </summary>
+    [DataType(DataType.Password)]
     public string Password { get; set; }
 
     /// <summary>

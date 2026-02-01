@@ -9,8 +9,8 @@ namespace DeepLearningServer.Models
         [Required, MaxLength(100)]
         public string Username { get; set; } = null!;
 
-        [Required, MaxLength(255)]
-        public string PasswordHash { get; set; } = null!; // 암호화된 비밀번호
+        [DataType(DataType.Password)]
+        public string PasswordHash { get; set; } = null!;
 
         [MaxLength(100)]
         public string? Email { get; set; }

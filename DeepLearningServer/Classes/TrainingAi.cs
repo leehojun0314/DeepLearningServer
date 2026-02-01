@@ -22,7 +22,7 @@ public class ClassificationResult
 
 public class TrainingAi
 {
-    public delegate Task TrainCallback(bool isTraining, float progress, int bestIteration, float currentAccuracy, float bestAccuracy
+    public delegate Task TrainCallback(bool isTraining, float progress, int bestIteration, float currentAccuracy, float bestAccuracy, float bestValidationAccuracy, float bestValidationError
         );
 
     private readonly ServerSettings serverSettings;
@@ -323,11 +323,65 @@ public class TrainingAi
             throw new OperationCanceledException("Operation was cancelled before dataset splitting");
         }
 
-        var firstProportion = parameterData.TrainingProportion + parameterData.ValidationProportion;
+        // 요청된 분할 비율 로깅 및 유효성 검사
+        float requestedTrain = parameterData.TrainingProportion;
+        float requestedVal = parameterData.ValidationProportion;
+        float requestedTest = parameterData.TestProportion;
+        Console.WriteLine($"Requested split ratios -> train: {requestedTrain}, val: {requestedVal}, test: {requestedTest}");
+
+        // 라벨별 이미지 수 집계 (OK + 각 NG 카테고리)
+        var labelCounts = _trainingImageRecords
+            .GroupBy(r => r.trueLabel)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        Console.WriteLine("Label counts before split:");
+        foreach (var kv in labelCounts)
+        {
+            Console.WriteLine($"  - {kv.Key}: {kv.Value}");
+        }
+
+        // 라벨 희소성으로 인해 분할이 불가능한 경우 감지 (각 라벨에 대해 train/val이 각각 최소 1장 확보 가능한지)
+        float effectiveTrain = requestedTrain;
+        float effectiveVal = requestedVal;
+        float effectiveTv = requestedTrain + requestedVal;
+
+        bool hasValidation = effectiveVal > 0f;
+        if (hasValidation)
+        {
+            bool infeasible = false;
+            foreach (var kv in labelCounts)
+            {
+                int c = kv.Value;
+                if (c == 0) continue;
+                // 각각 최소 1장 이상이 되도록 검사
+                if (c * effectiveTrain < 1f || c * effectiveVal < 1f)
+                {
+                    Console.WriteLine($"WARN: Label '{kv.Key}' has only {c} images. Requested split train:{effectiveTrain}, val:{effectiveVal} would leave zero samples in one split.");
+                    infeasible = true;
+                }
+            }
+
+            if (infeasible)
+            {
+                // 안전하게 검증을 비활성화하여 학습이 가능한 상태로 전환 (요청값은 보존, 이번 실행에만 적용)
+                Console.WriteLine("WARN: Falling back to 100:0 (train:val) for this run due to insufficient per-label images.");
+                effectiveTrain = Math.Min(1f, requestedTrain + requestedVal);
+                effectiveVal = 0f;
+                effectiveTv = effectiveTrain; // test 비율이 0일 때 tv는 train과 동일
+            }
+        }
+
+        Console.WriteLine($"Effective split ratios used -> train: {effectiveTrain}, val: {effectiveVal}");
+
+        // 테스트 비율은 현재 사용하지 않으므로 (요청값 로깅만) train/val 기준으로 분할 수행
+        var firstProportion = effectiveTv;
         dataset.SplitDataset(tvDataset, testDataset, firstProportion);
-        var secondProportion = parameterData.TrainingProportion /
-        (parameterData.TrainingProportion + parameterData.ValidationProportion);
+        var denom = (effectiveTrain + effectiveVal);
+        var secondProportion = denom > 0f ? (effectiveTrain / denom) : 1f;
         tvDataset?.SplitDataset(trainingDataset, validationDataset, secondProportion);
+
+        // 분할 결과 로깅
+        Console.WriteLine($"Split counts -> train: {trainingDataset?.NumImages}, val: {validationDataset?.NumImages}, test: {testDataset?.NumImages}");
 
         Console.WriteLine("Num labels: " + dataset.NumLabels);
         Console.WriteLine($"Num Images: {dataset.NumImages}");
@@ -439,9 +493,20 @@ public class TrainingAi
             float currentAccuracy = classifier.GetTrainingMetrics(iteration).Accuracy;
             Console.WriteLine("Current Accuracy: " + currentAccuracy);
 
-            cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy
-                ).GetAwaiter().GetResult();
+            float bestValidationAccuracy = 0f;
+            float bestValidationError = 0f;
+            try
+            {
+                bestValidationAccuracy = classifier.GetValidationMetrics(classifier.BestIteration).Accuracy;
+                bestValidationError = classifier.GetValidationMetrics(classifier.BestIteration).Error;
+            }
+            catch (Exception)
+            {
+                // Validation set may be disabled; keep defaults
+            }
 
+            cb(classifier.IsTraining(), classifier.CurrentTrainingProgression, classifier.BestIteration, currentAccuracy, bestAccuracy, bestValidationAccuracy, bestValidationError
+                ).GetAwaiter().GetResult();
             // 얼리 스타핑 로직 - 100% 정확도 반복 횟수 카운트
             if (currentAccuracy >= 1.0f)
             {

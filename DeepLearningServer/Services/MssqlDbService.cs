@@ -23,7 +23,11 @@ namespace DeepLearningServer.Services
         public DbContextOptions<DlServerContext> GetDbContextOptions()
         {
             var optionsBuilder = new DbContextOptionsBuilder<DlServerContext>();
-            optionsBuilder.UseSqlServer(_dbSettings.DefaultConnection);
+            optionsBuilder.UseSqlServer(_dbSettings.DefaultConnection, sqlOptions =>
+            {
+                // Enable transient fault handling so long-lived servers recover after idle disconnects
+                sqlOptions.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null);
+            });
             return optionsBuilder.Options;
         }
 
@@ -395,9 +399,7 @@ namespace DeepLearningServer.Services
                 }
             }
 
-            // 트랜잭션으로 배치 처리
-            using var transaction = await context.Database.BeginTransactionAsync();
-
+            // 배치 저장 (EF Core의 SaveChanges가 자체 트랜잭션을 사용)
             try
             {
                 int newRecordsCount = 0;
@@ -463,9 +465,8 @@ namespace DeepLearningServer.Services
                     }
                 }
 
-                // 모든 변경사항을 한 번에 저장
+                // 모든 변경사항을 한 번에 저장 (내부적으로 트랜잭션 적용)
                 await context.SaveChangesAsync();
-                await transaction.CommitAsync();
 
                 // 결과 로깅
                 await InsertLogAsync($"Training images saved successfully - New: {newRecordsCount}, Updated: {updatedRecordsCount}, Skipped: {skippedRecordsCount}", LogLevel.Information);
@@ -474,18 +475,16 @@ namespace DeepLearningServer.Services
             catch (DbUpdateException dbEx) when (dbEx.InnerException?.Message.Contains("UNIQUE constraint") == true ||
                                                   dbEx.InnerException?.Message.Contains("duplicate key") == true)
             {
-                await transaction.RollbackAsync();
-                Console.WriteLine($"Duplicate image file detected during batch save: {dbEx.InnerException?.Message}");
-                await InsertLogAsync($"Duplicate image file detected, transaction rolled back: {dbEx.InnerException?.Message}", LogLevel.Warning);
+                System.Diagnostics.Debug.WriteLine($"Duplicate image file detected during batch save");
+                await InsertLogAsync("Duplicate image file detected, transaction rolled back", LogLevel.Warning);
 
                 // 중복이 발생한 경우 개별적으로 처리할 수도 있지만, 현재는 전체 롤백
                 throw new InvalidOperationException("Duplicate image files detected. This might indicate concurrent training processes or data inconsistency.", dbEx);
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                Console.WriteLine($"Error in SaveTrainingImagesAsync: {ex.Message}");
-                await InsertLogAsync($"Error saving training images (rolled back): {ex.Message}", LogLevel.Error);
+                System.Diagnostics.Debug.WriteLine($"Error in SaveTrainingImagesAsync: {ex.Message}");
+                await InsertLogAsync("Error saving training images (rolled back)", LogLevel.Error);
                 throw;
             }
         }
@@ -851,18 +850,144 @@ namespace DeepLearningServer.Services
 
             if (toInsert.Count > 0)
             {
-                using var tx = await context.Database.BeginTransactionAsync();
+                // Let EF handle its own transaction to be compatible with resilient execution strategy
                 try
                 {
                     await context.ImageFiles.AddRangeAsync(toInsert);
                     await context.SaveChangesAsync();
-                    await tx.CommitAsync();
                 }
                 catch (Exception ex)
                 {
-                    await tx.RollbackAsync();
                     result.Errors.Add($"DB save failed: {ex.Message}");
-                    // 실패시 삽입 수를 롤백하지는 않지만, 호출자가 오류를 확인할 수 있도록 유지
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 파일 시스템의 특정 프로세스 OK 이미지("OK/{processName}/BASE", "OK/{processName}/NEW")를 스캔하여 ImageFiles 테이블과 동기화합니다.
+        /// - OK 이미지는 지정된 AdmsProcessId로 저장합니다
+        /// - Size는 Middle/Large 문자열로 저장합니다
+        /// - Status는 Base/New로 저장합니다
+        /// </summary>
+        public async Task<OkSyncResult> SyncOkImagesByProcessAsync(int admsProcessId, ImageSize imageSize, string imageRootPath)
+        {
+            var result = new OkSyncResult
+            {
+                ImageSize = imageSize == ImageSize.Middle ? "Middle" : "Large",
+                ImageRoot = imageRootPath,
+                AdmsProcessId = admsProcessId
+            };
+
+            if (string.IsNullOrWhiteSpace(imageRootPath) || !Directory.Exists(imageRootPath))
+            {
+                result.Errors.Add($"Image root path does not exist: {imageRootPath}");
+                return result;
+            }
+
+            using var context = new DlServerContext(GetDbContextOptions(), _configuration);
+
+            // 프로세스 이름 조회
+            var admsProcess = await context.AdmsProcesses
+                .Include(ap => ap.Process)
+                .FirstOrDefaultAsync(ap => ap.Id == admsProcessId);
+
+            if (admsProcess == null)
+            {
+                result.Errors.Add($"AdmsProcess not found: {admsProcessId}");
+                return result;
+            }
+
+            string processName = admsProcess.Process.Name;
+            result.ProcessName = processName;
+
+            string okBasePath = Path.Combine(imageRootPath, "OK", processName, "BASE");
+            string okNewPath = Path.Combine(imageRootPath, "OK", processName, "NEW");
+
+            var files = new List<(string filePath, string status)>();
+            if (Directory.Exists(okBasePath))
+            {
+                foreach (var f in Directory.GetFiles(okBasePath, "*.jpg", SearchOption.AllDirectories))
+                {
+                    files.Add((f, "Base"));
+                }
+            }
+            if (Directory.Exists(okNewPath))
+            {
+                foreach (var f in Directory.GetFiles(okNewPath, "*.jpg", SearchOption.AllDirectories))
+                {
+                    files.Add((f, "New"));
+                }
+            }
+
+            result.TotalFilesScanned = files.Count;
+            if (files.Count == 0)
+            {
+                return result;
+            }
+
+            // 기존 OK 이미지 키셋 로드 (해당 Size + AdmsProcessId만)
+            var existing = await context.ImageFiles
+                .Where(img => img.Size == result.ImageSize && img.AdmsProcessId == admsProcessId)
+                .Select(img => new { img.Name, img.Directory })
+                .ToListAsync();
+
+            var existingKeys = new HashSet<string>(existing.Select(e => $"{e.Name}|{e.Directory}"));
+
+            var toInsert = new List<ImageFile>();
+
+            foreach (var (filePath, status) in files)
+            {
+                try
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    string absoluteDir = Path.GetDirectoryName(filePath) ?? string.Empty;
+                    string relativeDir = ConvertToRelativePath(absoluteDir);
+
+                    string key = $"{fileName}|{relativeDir}";
+                    if (existingKeys.Contains(key))
+                    {
+                        result.Skipped++;
+                        continue;
+                    }
+
+                    var newImage = new ImageFile
+                    {
+                        Name = fileName,
+                        Directory = relativeDir,
+                        Size = result.ImageSize,
+                        Status = status,
+                        AdmsProcessId = admsProcessId,
+                        Category = null,
+                        CapturedTime = File.Exists(filePath) ? File.GetCreationTime(filePath) : DateTime.Now
+                    };
+
+                    toInsert.Add(newImage);
+
+                    result.Inserted++;
+                    if (status == "Base") result.InsertedBase++; else result.InsertedNew++;
+
+                    // 중복 방지를 위해 키셋에 즉시 추가
+                    existingKeys.Add(key);
+                }
+                catch (Exception ex)
+                {
+                    result.Errors.Add(ex.Message);
+                }
+            }
+
+            if (toInsert.Count > 0)
+            {
+                // Let EF handle its own transaction to be compatible with resilient execution strategy
+                try
+                {
+                    await context.ImageFiles.AddRangeAsync(toInsert);
+                    await context.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    result.Errors.Add($"DB save failed: {ex.Message}");
                 }
             }
 
