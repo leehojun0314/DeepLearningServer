@@ -12,6 +12,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using DeepLearningServer.Attributes;
 using Microsoft.Extensions.Configuration;
+using System.Net.Http;
+using System.Net.Http.Headers;
 
 /// <summary>
 /// 딥러닝 관련 API 요청을 처리하는 컨트롤러 클래스입니다.
@@ -102,6 +104,11 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             }
             ToolStatusManager.SetProcessRunning(true);
 
+            bool usePythonServer = _serverSettings.UsePythonServer;
+            await _mssqlDbService.InsertLogAsync(
+                $"Training backend selected: {(usePythonServer ? "PythonServer" : "Euresys")}",
+                LogLevel.Information);
+
             // 🔹 학습 중인지 확인
             //bool isRunning = await _mssqlDbService.CheckIsTraining();
             //if (isRunning)
@@ -144,9 +151,17 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 return BadRequest("The tool is already running.");
             }
 
-            await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
-            var instance = SingletonAiDuo.CreateInstance(parameterData, _serverSettings);
-            await _mssqlDbService.InsertLogAsync("Initialized instance", LogLevel.Debug);
+            TrainingAi? instance = null;
+            if (!usePythonServer)
+            {
+                await _mssqlDbService.InsertLogAsync("Initializing instance", LogLevel.Debug);
+                instance = SingletonAiDuo.CreateInstance(parameterData, _serverSettings);
+                await _mssqlDbService.InsertLogAsync("Initialized instance", LogLevel.Debug);
+            }
+            else
+            {
+                await _mssqlDbService.InsertLogAsync("Python training enabled: skipping Euresys init", LogLevel.Debug);
+            }
 
             // ✅ AdmsProcessIds에 해당하는 정보 가져오기
             List<Dictionary<string, object>> admsProcessInfoList = await _mssqlDbService.GetAdmsProcessInfos(parameterData.AdmsProcessIds);
@@ -180,6 +195,250 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
             // ✅ 모델 트레이닝 실행
             _ = Task.Run(async () =>
             {
+                if (usePythonServer)
+                {
+                    TrainingAiHttpBridge? bridge = null;
+                    try
+                    {
+                        bridge = new TrainingAiHttpBridge(_serverSettings.PyTrainingServerUrl);
+
+                        string sizeFolder = parameterData.ImageSize == ImageSize.Large ? "LARGE" : "MIDDLE";
+                        string imagePath = !string.IsNullOrEmpty(_serverSettings.PyTrainingDataPath)
+                            ? _serverSettings.PyTrainingDataPath
+                            : (parameterData.ImageSize == ImageSize.Large ? _serverSettings.LargeImagePath : _serverSettings.MiddleImagePath);
+                        string outputPath = !string.IsNullOrEmpty(_serverSettings.PyTrainingOutputPath)
+                            ? _serverSettings.PyTrainingOutputPath
+                            : Path.Combine(_serverSettings.EvaluationModelDirectory, sizeFolder, "PyModels", record.Id.ToString());
+
+                        if (!Directory.Exists(outputPath))
+                        {
+                            Directory.CreateDirectory(outputPath);
+                        }
+
+                        var pyParams = PyTrainingParameters.FromTrainingDto(parameterData);
+                        var categories = parameterData.Categories ?? Array.Empty<string>();
+                        bridge.SetParameters(pyParams);
+                        bridge.SetPaths(imagePath, outputPath);
+                        bridge.SetCategories(categories);
+
+                        int numImages = await bridge.LoadImagesAsync(categories, processNames.ToArray(), imagePath);
+                        await _mssqlDbService.InsertLogAsync($"[Py] Images prepared. Count: {numImages}", LogLevel.Debug);
+
+                        // 이미지 로딩 완료 후 훈련 시작 준비
+                        record.Status = TrainingStatus.Running;
+                        record.StartTime = DateTime.Now;
+                        await _mssqlDbService.UpdateTrainingAsync(record);
+                        await _mssqlDbService.InsertLogAsync("[Py] Training phase started after image loading completion", LogLevel.Information);
+
+                        ProgressEntry? previousProgressEntry = null;
+
+                        await bridge.TrainAsync(async (isTraining, progress, bestIteration, currentAccuracy, bestAccuracy, bestValidationAccuracy, bestValidationError) =>
+                        {
+                            var now = DateTime.Now;
+
+                            record.Status = TrainingStatus.Running;
+                            record.Progress = progress;
+                            record.BestIteration = bestIteration;
+                            record.Accuracy = bestAccuracy;
+                            record.Loss = 1 - bestAccuracy;
+
+                            try
+                            {
+                                if (previousProgressEntry != null)
+                                {
+                                    previousProgressEntry.EndTime = now;
+                                    previousProgressEntry.Duration = (now - previousProgressEntry.StartTime).TotalSeconds;
+                                    await _mssqlDbService.UpdateProgressEntryAsync(previousProgressEntry);
+                                }
+
+                                await _mssqlDbService.UpdateTrainingAsync(record);
+
+                                var progressEntry = new ProgressEntry
+                                {
+                                    IsTraining = isTraining,
+                                    Progress = isTraining ? progress : 1,
+                                    BestIteration = bestIteration,
+                                    StartTime = now,
+                                    EndTime = null,
+                                    Duration = null,
+                                    Accuracy = currentAccuracy,
+                                    ValidationAccuracy = bestValidationAccuracy,
+                                    ValidationError = bestValidationError,
+                                    TrainingRecordId = record.Id
+                                };
+
+                                await _mssqlDbService.PushProgressEntryAsync(record.Id, progressEntry);
+                                previousProgressEntry = progressEntry;
+
+                                var durationText = previousProgressEntry?.Duration != null ? $", Duration: {previousProgressEntry.Duration:F2}s" : "";
+                                await _mssqlDbService.InsertLogAsync($"[Py] Training progress: {progress:P1}, Best iteration: {bestIteration}, Accuracy: {bestAccuracy:P2}{durationText}", LogLevel.Debug);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Py] DB update error: {ex.Message}");
+                            }
+                        });
+
+                        if (previousProgressEntry != null)
+                        {
+                            try
+                            {
+                                var finalTime = DateTime.Now;
+                                previousProgressEntry.EndTime = finalTime;
+                                previousProgressEntry.Duration = (finalTime - previousProgressEntry.StartTime).TotalSeconds;
+                                await _mssqlDbService.UpdateProgressEntryAsync(previousProgressEntry);
+                                Console.WriteLine("[Py] 마지막 ProgressEntry 업데이트 완료");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Py] 마지막 ProgressEntry 업데이트 오류: {ex.Message}");
+                            }
+                        }
+
+                        string? bestModelPath = bridge.GetBestModelPath();
+
+                        // ✅ 훈련 이미지 기록을 데이터베이스에 저장
+                        try
+                        {
+                            var processAdmsMapping = new Dictionary<string, int>();
+                            foreach (var info in admsProcessInfoList)
+                            {
+                                if (info.TryGetValue("processName", out object processNameValue) &&
+                                    info.TryGetValue("admsProcessId", out object admsProcessIdValue) &&
+                                    processNameValue is string pName &&
+                                    admsProcessIdValue is int apId)
+                                {
+                                    processAdmsMapping[pName] = apId;
+                                }
+                            }
+
+                            var trainingImageRecords = bridge.GetTrainingImageRecords(processAdmsMapping);
+                            if (trainingImageRecords.Count > 0)
+                            {
+                                await _mssqlDbService.SaveTrainingImagesAsync(trainingImageRecords, record.Id, parameterData.ImageSize);
+                                await _mssqlDbService.InsertLogAsync($"[Py] Saved {trainingImageRecords.Count} training image records to database", LogLevel.Information);
+                            }
+
+                            // TrainingImageResult 저장
+                            if (categories.Length > 0)
+                            {
+                                await _mssqlDbService.InsertLogAsync("[Py] Starting TrainingImageResult processing", LogLevel.Information);
+                                await SaveTrainingImageResultsFromRecords(
+                                    record.Id,
+                                    trainingImageRecords,
+                                    imagePath => bridge.ClassifyAsync(imagePath, bestModelPath));
+                                await _mssqlDbService.InsertLogAsync("[Py] TrainingImageResult processing completed", LogLevel.Information);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Py] Error saving training images/results: {ex.Message}");
+                            await _mssqlDbService.InsertLogAsync($"[Py] Error saving training images/results: {ex.Message}", LogLevel.Error);
+                        }
+
+                        // ✅ 여러 개의 프로세스에 대한 모델 저장
+                        foreach (var admsProcessInfo in admsProcessInfoList)
+                        {
+                            if (!admsProcessInfo.TryGetValue("admsId", out object admsIdValue) || !(admsIdValue is int admsId)) continue;
+                            if (!admsProcessInfo.TryGetValue("processId", out object processIdValue) || !(processIdValue is int processId)) continue;
+                            if (!admsProcessInfo.TryGetValue("processName", out object processNameValue) || !(processNameValue is string processName)) continue;
+
+                            var adms = admsList.Find(a => a.Id == admsId);
+                            if (adms == null) continue;
+
+                            string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\{adms.Name}\\";
+                            string modelName = $"{processName}.edltool";
+
+                            if (!Directory.Exists(savePath))
+                            {
+                                Directory.CreateDirectory(savePath);
+                            }
+
+                            string result;
+                            try
+                            {
+                                string localPath = savePath + modelName;
+                                string clientPath = Path.Combine(parameterData.ClientModelDestination, modelName);
+                                await bridge.SaveModelAsync(localPath, bestModelPath);
+                                result = await UploadModelToClientAsync(localPath, clientPath, adms.LocalIp);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Py] Model save error: {ex.Message}");
+                                await _mssqlDbService.InsertLogAsync($"[Py] Model save error: {ex.Message}", LogLevel.Error);
+                                result = "error";
+                            }
+
+                            if (admsProcessInfo.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
+                            {
+                                string admsProcessTypeString = parameterData.ImageSize switch
+                                {
+                                    ImageSize.Middle => "Middle",
+                                    ImageSize.Large => "Large",
+                                    _ => "Middle"
+                                };
+
+                                AdmsProcessType admsProcessType = await _mssqlDbService.GetOrCreateAdmsProcessType(intAdmsProcessId, admsProcessTypeString);
+
+                                var modelRecord = new ModelRecord
+                                {
+                                    ModelName = modelName,
+                                    AdmsProcessTypeId = admsProcessType.Id,
+                                    TrainingRecordId = record.Id,
+                                    Status = result,
+                                    ServerPath = savePath + modelName,
+                                    ClientPath = Path.Combine(parameterData.ClientModelDestination, modelName),
+                                    CreatedAt = DateTime.Now
+                                };
+                                await _mssqlDbService.InsertModelRecordAsync(modelRecord);
+
+                                Console.WriteLine($"[Py] 모델 레코드 저장 완료: ModelName={modelName}, AdmsProcessTypeId={admsProcessType.Id}, Status={result}");
+                            }
+                        }
+
+                        record.Status = TrainingStatus.Completed;
+                        record.EndTime = DateTime.Now;
+                        record.Progress = 1;
+                        await _mssqlDbService.UpdateTrainingAsync(record);
+                        await _mssqlDbService.InsertLogAsync("[Py] Model training finished", LogLevel.Information);
+
+                        Dictionary<string, float> trainingResults = bridge.GetTrainingResult();
+                        var labelList = trainingResults.Select(kvp => new Label
+                        {
+                            Name = kvp.Key,
+                            Accuracy = kvp.Value,
+                            TrainingRecordId = record.Id
+                        }).ToArray();
+
+                        await _mssqlDbService.UpdateLabelsByIdAsync(record.Id, labelList);
+                    }
+                    catch (OperationCanceledException cancelEx)
+                    {
+                        Console.WriteLine($"[Py] Training was cancelled: {cancelEx.Message}");
+                        await _mssqlDbService.InsertLogAsync($"[Py] Training was cancelled: {cancelEx.Message}", LogLevel.Information);
+
+                        record.Status = TrainingStatus.Cancelled;
+                        record.EndTime = DateTime.Now;
+                        await _mssqlDbService.UpdateTrainingAsync(record);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine($"[Py] Error: {e}");
+                        await _mssqlDbService.InsertLogAsync($"[Py] Error occurred: {e.Message}", LogLevel.Error);
+
+                        record.Status = TrainingStatus.Failed;
+                        record.EndTime = DateTime.Now;
+                        await _mssqlDbService.UpdateTrainingAsync(record);
+                    }
+                    finally
+                    {
+                        bridge?.Dispose();
+                        ToolStatusManager.SetProcessRunning(false);
+                    }
+
+                    return;
+                }
+
                 await RunOnStaThread(async () =>
                 {
                     try
@@ -333,7 +592,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
 
                             // ✅ 새로운 경로 구조: ImageSize에 따라 LARGE 또는 MIDDLE 폴더 사용
                             string sizeFolder = parameterData.ImageSize == ImageSize.Large ? "LARGE" : "MIDDLE";
-							string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\{adms.Name}\\";
+                            string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\{adms.Name}\\";
 
                             // ✅ 모델명을 ProcessId.edltool로 변경
                             string modelName = $"{processName}.edltool";
@@ -779,13 +1038,23 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     [NonAction]
     private async Task SaveConfusionMatrixImages(int trainingRecordId, List<string> allCategories, TrainingAi instance, ImageSize imageSize)
     {
+        var trainingImageRecords = instance.GetTrainingImageRecords();
+        await SaveTrainingImageResultsFromRecords(
+            trainingRecordId,
+            trainingImageRecords,
+            imagePath => Task.FromResult(instance.Classify(imagePath)));
+    }
+
+    [NonAction]
+    private async Task SaveTrainingImageResultsFromRecords(
+        int trainingRecordId,
+        List<(string imagePath, string trueLabel, string status, string? category, int? admsProcessId)> trainingImageRecords,
+        Func<string, Task<ClassificationResult>> classifyAsync)
+    {
         try
         {
             await _mssqlDbService.InsertLogAsync("🚀 Starting TrainingImageResult data processing...", LogLevel.Information);
             Console.WriteLine("🔍 DEBUG: Starting TrainingImageResult data processing...");
-
-            // 훈련에 사용된 이미지 기록 가져오기
-            var trainingImageRecords = instance.GetTrainingImageRecords();
 
             Console.WriteLine($"🔍 DEBUG: Retrieved {trainingImageRecords.Count} training image records");
 
@@ -837,7 +1106,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         }
 
                         // 모델 추론 실행
-                        var classifyResult = instance.Classify(imageRecord.imagePath);
+                        var classifyResult = await classifyAsync(imageRecord.imagePath);
                         string predictedLabel = classifyResult.BestLabel?.ToUpper() ?? "UNKNOWN";
                         float confidence = classifyResult.BestScore;
 
@@ -913,8 +1182,46 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ ERROR: Critical error in SaveConfusionMatrixImages: {ex.Message}");
-            await _mssqlDbService.InsertLogAsync($"Critical error in SaveConfusionMatrixImages: {ex.Message}", LogLevel.Error);
+            Console.WriteLine($"❌ ERROR: Critical error in SaveTrainingImageResultsFromRecords: {ex.Message}");
+            await _mssqlDbService.InsertLogAsync($"Critical error in SaveTrainingImageResultsFromRecords: {ex.Message}", LogLevel.Error);
+        }
+    }
+
+    [NonAction]
+    private static async Task<string> UploadModelToClientAsync(string localPath, string remotePath, string clientIpAddress)
+    {
+        try
+        {
+            string? directoryPath = Path.GetDirectoryName(localPath);
+            if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            using var client = new HttpClient();
+            using var form = new MultipartFormDataContent();
+
+            byte[] fileBytes = await System.IO.File.ReadAllBytesAsync(localPath);
+            var fileContent = new ByteArrayContent(fileBytes);
+            fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+            string fileName = Path.GetFileName(localPath);
+            form.Add(fileContent, "File", fileName);
+            form.Add(new StringContent(remotePath), "ModelPath");
+
+            string apiUrl = $"http://{clientIpAddress}/api/model/upload";
+            HttpResponseMessage response = await client.PostAsync(apiUrl, form);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return "saved";
+            }
+
+            return "pending";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Py] Model upload error: {ex.Message}");
+            return "error";
         }
     }
 
