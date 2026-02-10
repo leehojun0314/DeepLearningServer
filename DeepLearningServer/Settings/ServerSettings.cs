@@ -1,4 +1,4 @@
-﻿namespace DeepLearningServer.Settings;
+namespace DeepLearningServer.Settings;
 
 public class ServerSettings
 {
@@ -20,13 +20,4 @@ public class ServerSettings
     /// </summary>
     public bool UsePythonServer { get; set; } = false;
 
-    /// <summary>
-    /// 파이썬 훈련 서버에서 사용할 데이터 경로
-    /// </summary>
-    public string PyTrainingDataPath { get; set; } = "";
-
-    /// <summary>
-    /// 파이썬 훈련 서버에서 모델을 저장할 출력 경로
-    /// </summary>
-    public string PyTrainingOutputPath { get; set; } = "";
 }

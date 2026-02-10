@@ -26,13 +26,13 @@ public class Program
 
         var builder = WebApplication.CreateBuilder(args);
 
-        // Configure file logging (logs/app-YYYY-MM-DD.log)
-        var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
-        var fileLoggerProvider = new FileLoggerProvider(logsDir, LogLevel.Information);
-        builder.Logging.ClearProviders();
-        builder.Logging.AddProvider(fileLoggerProvider);
-        builder.Logging.SetMinimumLevel(LogLevel.Information);
-        ConsoleRedirector.RedirectToLogger(fileLoggerProvider);
+        //// Configure file logging (logs/app-YYYY-MM-DD.log)
+        //var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
+        //var fileLoggerProvider = new FileLoggerProvider(logsDir, LogLevel.Information);
+        //builder.Logging.ClearProviders();
+        //builder.Logging.AddProvider(fileLoggerProvider);
+        //builder.Logging.SetMinimumLevel(LogLevel.Information);
+        //ConsoleRedirector.RedirectToLogger(fileLoggerProvider);
 
         // ȯ�� ���� �߰� �� ����
         builder.Configuration.AddEnvironmentVariables();

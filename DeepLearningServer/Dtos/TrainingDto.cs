@@ -130,6 +130,12 @@ public class ClassifierParamsDto
     public uint ImageChannels { get; set; } = 3;
 
     [DefaultValue(false)]
+    public bool AddFft { get; set; } = false;
+
+    [DefaultValue(false)]
+    public bool GrayInput { get; set; } = false;
+
+    [DefaultValue(false)]
     public bool UsePretrainedModel { get; set; } = false;
 
     [DefaultValue(true)]

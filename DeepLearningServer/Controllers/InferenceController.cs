@@ -1,8 +1,10 @@
 ﻿using DeepLearningServer.Classes;
 using DeepLearningServer.Dtos;
+using DeepLearningServer.Settings;
 using Euresys.Open_eVision.EasyDeepLearning;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 
 /// <summary>
@@ -12,8 +14,10 @@ namespace DeepLearningServer.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class InferenceController : ControllerBase
+    public class InferenceController(IOptions<ServerSettings> serverSettings) : ControllerBase
     {
+        private readonly ServerSettings _serverSettings = serverSettings.Value;
+
         //[HttpPost]
         //public IActionResult Post([FromBody] InferenceDto inferenceDto)
         //{
@@ -55,16 +59,40 @@ namespace DeepLearningServer.Controllers
         /// <response code="200">추론 성공</response>
         /// <response code="400">모델 로드 또는 추론 과정에서 오류 발생</response>
         [HttpPost("single")]
-        public IActionResult PostSingle([FromBody] InferenceDto inferenceDto)
+        public async Task<IActionResult> PostSingle([FromBody] InferenceDto inferenceDto)
         {
             try
             {
                 Console.WriteLine($"Starting single image inference with model: {inferenceDto.ModelPath}");
                 Console.WriteLine($"Image path: {inferenceDto.ImagePath}");
-
-                using (var inferenceAi = new InferenceAi(inferenceDto.ModelPath))
+                if (!System.IO.File.Exists(inferenceDto.ImagePath))
                 {
-                    var stopwatch = Stopwatch.StartNew();
+                    return BadRequest(new { Error = $"Image file not found: {inferenceDto.ImagePath}" });
+                }
+
+                var stopwatch = Stopwatch.StartNew();
+                if (_serverSettings.UsePythonServer)
+                {
+                    using var bridge = new TrainingAiHttpBridge(_serverSettings.PyTrainingServerUrl);
+                    var result = await bridge.ClassifyAsync(inferenceDto.ImagePath, inferenceDto.ModelPath);
+                    stopwatch.Stop();
+
+                    var elapsedMs = stopwatch.ElapsedMilliseconds;
+                    Console.WriteLine($"Best label: {result.BestLabel}, Best score: {result.BestScore}");
+                    Console.WriteLine($"Single inference elapsed: {elapsedMs} ms");
+
+                    Response.Headers["X-Inference-Duration-ms"] = elapsedMs.ToString();
+                    return Ok(new
+                    {
+                        BestLabel = result.BestLabel,
+                        BestProbability = result.BestScore,
+                        ElapsedMilliseconds = elapsedMs,
+                        LabelProbabilities = result.AllScores ?? new Dictionary<string, float>()
+                    });
+                }
+                else
+                {
+                    using var inferenceAi = new InferenceAi(inferenceDto.ModelPath);
                     var result = inferenceAi.ClassifySingleImage(inferenceDto.ImagePath);
                     stopwatch.Stop();
 
@@ -108,7 +136,7 @@ namespace DeepLearningServer.Controllers
         /// <response code="200">일괄 추론 성공</response>
         /// <response code="400">모델 로드 또는 추론 과정에서 오류 발생</response>
         [HttpPost("multi")]
-        public IActionResult PostMulti([FromBody] MultiInferenceDto inferenceDto)
+        public async Task<IActionResult> PostMulti([FromBody] MultiInferenceDto inferenceDto)
         {
             try
             {
@@ -133,9 +161,55 @@ namespace DeepLearningServer.Controllers
                     }
                 }
 
-                using (var inferenceAi = new InferenceAi(inferenceDto.ModelPath))
+                var stopwatch = Stopwatch.StartNew();
+                if (_serverSettings.UsePythonServer)
                 {
-                    var stopwatch = Stopwatch.StartNew();
+                    using var bridge = new TrainingAiHttpBridge(_serverSettings.PyTrainingServerUrl);
+                    var tasks = inferenceDto.ImagePaths.Select(path => bridge.ClassifyAsync(path, inferenceDto.ModelPath));
+                    var results = await Task.WhenAll(tasks);
+                    stopwatch.Stop();
+
+                    var response = results.Select((result, index) =>
+                    {
+                        try
+                        {
+                            return new ClassificationResultDto
+                            {
+                                BestLabel = result.BestLabel,
+                                BestProbability = result.BestScore,
+                                LabelProbabilities = (result.AllScores ?? new Dictionary<string, float>())
+                                  .Select(kvp =>
+                                  {
+                                      return new LabelProbabilityDto
+                                      {
+                                          Label = kvp.Key,
+                                          Probability = kvp.Value
+                                      };
+                                  }).ToArray()
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error processing result at index {index}: {ex.Message}");
+                            return new ClassificationResultDto
+                            {
+                                BestLabel = "ERROR",
+                                BestProbability = 0.0f,
+                                LabelProbabilities = new LabelProbabilityDto[0]
+                            };
+                        }
+                    }).ToList();
+
+                    var elapsedMs = stopwatch.ElapsedMilliseconds;
+                    Console.WriteLine($"Successfully processed {response.Count} images");
+                    Console.WriteLine($"Multi inference elapsed: {elapsedMs} ms");
+
+                    Response.Headers["X-Inference-Duration-ms"] = elapsedMs.ToString();
+                    return Ok(response); // JSON 응답 반환
+                }
+                else
+                {
+                    using var inferenceAi = new InferenceAi(inferenceDto.ModelPath);
                     var results = inferenceAi.ClassifyMultipleImages(inferenceDto.ImagePaths);
                     stopwatch.Stop();
 
@@ -144,7 +218,6 @@ namespace DeepLearningServer.Controllers
                         return BadRequest(new { Error = "Classification returned null results" });
                     }
 
-                    // 명시적 DTO 사용
                     var response = results.Select((result, index) =>
                     {
                         try
@@ -153,7 +226,6 @@ namespace DeepLearningServer.Controllers
                             {
                                 BestLabel = result.BestLabel,
                                 BestProbability = result.BestProbability,
-                                // NumLabels 만큼 순회하여 각 레이블의 이름과 확률을 담음
                                 LabelProbabilities = Enumerable.Range(0, result.NumLabels)
                                   .Select(i =>
                                   {
@@ -183,7 +255,7 @@ namespace DeepLearningServer.Controllers
                     Console.WriteLine($"Multi inference elapsed: {elapsedMs} ms");
 
                     Response.Headers["X-Inference-Duration-ms"] = elapsedMs.ToString();
-                    return Ok(response); // JSON 응답 반환
+                    return Ok(response);
                 }
             }
             catch (Exception e)

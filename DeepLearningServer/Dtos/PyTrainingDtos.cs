@@ -152,6 +152,12 @@ namespace DeepLearningServer.Dtos
     [JsonProperty("image_channels")]
     public int ImageChannels { get; set; } = 3;
 
+    [JsonProperty("add_fft")]
+    public bool AddFft { get; set; } = false;
+
+    [JsonProperty("gray_input")]
+    public bool GrayInput { get; set; } = false;
+
     [JsonProperty("batch_size")]
     public int BatchSize { get; set; } = 16;
 
@@ -190,6 +196,8 @@ namespace DeepLearningServer.Dtos
     public float ValidationProportion { get; set; } = 0.2f;
     public float TestProportion { get; set; } = 0f;
     public int EarlyStoppingPatience { get; set; } = 10;
+    public bool AddFft { get; set; } = false;
+    public bool GrayInput { get; set; } = false;
 
     public PyGeometryParams Geometry { get; set; } = new PyGeometryParams();
     public PyColorParams Color { get; set; } = new PyColorParams();
@@ -201,6 +209,14 @@ namespace DeepLearningServer.Dtos
     /// </summary>
     public static PyTrainingParameters FromTrainingDto(TrainingDto dto)
     {
+      int resolvedChannels = ResolveImageChannels(
+          (int)dto.Classifier.ImageChannels,
+          dto.Classifier.GrayInput,
+          dto.Classifier.AddFft);
+
+      bool resolvedGrayInput = dto.Classifier.GrayInput || resolvedChannels == 1 || resolvedChannels == 2;
+      bool resolvedAddFft = dto.Classifier.AddFft || resolvedChannels == 2 || resolvedChannels == 4;
+
       return new PyTrainingParameters
       {
         Categories = dto.Categories,
@@ -209,6 +225,8 @@ namespace DeepLearningServer.Dtos
         ValidationProportion = dto.ValidationProportion,
         TestProportion = dto.TestProportion,
         EarlyStoppingPatience = dto.EarlyStoppingPatience,
+        AddFft = resolvedAddFft,
+        GrayInput = resolvedGrayInput,
         Geometry = new PyGeometryParams
         {
           MaxRotation = dto.Geometry.MaxRotation,
@@ -245,7 +263,9 @@ namespace DeepLearningServer.Dtos
         {
           ImageWidth = (int)dto.Classifier.ImageWidth,
           ImageHeight = (int)dto.Classifier.ImageHeight,
-          ImageChannels = (int)dto.Classifier.ImageChannels,
+          ImageChannels = resolvedChannels,
+          AddFft = resolvedAddFft,
+          GrayInput = resolvedGrayInput,
           BatchSize = dto.Classifier.BatchSize,
           UsePretrainedModel = dto.Classifier.UsePretrainedModel,
           ComputeHeatMap = dto.Classifier.ComputeHeatMap,
@@ -255,6 +275,16 @@ namespace DeepLearningServer.Dtos
           ImageCacheSize = (int)dto.Classifier.ImageCacheSize
         }
       };
+    }
+
+    private static int ResolveImageChannels(int imageChannels, bool grayInput, bool addFft)
+    {
+      if (grayInput || addFft)
+      {
+        return (grayInput ? 1 : 3) + (addFft ? 1 : 0);
+      }
+
+      return imageChannels > 0 ? imageChannels : 3;
     }
   }
 
@@ -288,6 +318,10 @@ namespace DeepLearningServer.Dtos
     /// <summary>Output directory for checkpoints</summary>
     [JsonProperty("out")]
     public string Out { get; set; } = string.Empty;
+
+    /// <summary>Full path to save the best model as .onnlmodel after training</summary>
+    [JsonProperty("best_model_path")]
+    public string? BestModelPath { get; set; }
 
     /// <summary>Explicit category-to-path mapping for training</summary>
     [JsonProperty("category_sources")]
@@ -414,6 +448,8 @@ namespace DeepLearningServer.Dtos
         BatchSize = param.Classifier.BatchSize,
         ValSplit = param.ValidationProportion,
         Patience = param.EarlyStoppingPatience,
+        AddFft = param.AddFft || param.Classifier.AddFft || param.Classifier.ImageChannels == 2 || param.Classifier.ImageChannels == 4,
+        GrayInput = param.GrayInput || param.Classifier.GrayInput || param.Classifier.ImageChannels == 1 || param.Classifier.ImageChannels == 2,
         GeomAug = param.Geometry,
         ColorAug = param.Color,
         NoiseAug = param.Noise,

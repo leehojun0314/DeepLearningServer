@@ -45,6 +45,9 @@ namespace DeepLearningServer.Classes
   /// </summary>
   public class TrainingAiHttpBridge : IDisposable
   {
+    private static TrainingAiHttpBridge? _currentInstance;
+    private static readonly object _instanceLock = new();
+
     private readonly HttpClient _client;
     private readonly string _baseUrl;
     private readonly TimeSpan _pollInterval;
@@ -54,10 +57,37 @@ namespace DeepLearningServer.Classes
     private PyTrainStatusResponse? _lastStatus;
     private string? _dataPath;
     private string? _outPath;
+    private string? _bestModelPath;
     private string[]? _categories;
     private List<PyCategorySource>? _categorySources;
+    private string? _tempImageSessionDir;
     private bool _isTraining;
     private CancellationTokenSource? _cts;
+
+    /// <summary>
+    /// Currently active bridge instance for external stop requests.
+    /// </summary>
+    public static TrainingAiHttpBridge? CurrentInstance
+    {
+      get
+      {
+        lock (_instanceLock)
+        {
+          return _currentInstance;
+        }
+      }
+    }
+
+    /// <summary>
+    /// Set or clear currently active bridge instance.
+    /// </summary>
+    public static void SetCurrentInstance(TrainingAiHttpBridge? instance)
+    {
+      lock (_instanceLock)
+      {
+        _currentInstance = instance;
+      }
+    }
 
     /// <summary>
     /// Create a new HTTP training bridge
@@ -95,6 +125,17 @@ namespace DeepLearningServer.Classes
     {
       _dataPath = dataPath;
       _outPath = outPath;
+      _bestModelPath = null;
+    }
+
+    /// <summary>
+    /// Set data/output paths and explicit best model path.
+    /// </summary>
+    public void SetPaths(string dataPath, string outPath, string bestModelPath)
+    {
+      _dataPath = dataPath;
+      _outPath = outPath;
+      _bestModelPath = bestModelPath;
     }
 
     /// <summary>
@@ -155,13 +196,23 @@ namespace DeepLearningServer.Classes
     /// <param name="processNames">OK process names</param>
     /// <param name="imagePath">Root image directory</param>
     /// <returns>Estimated image count</returns>
-    public Task<int> LoadImagesAsync(string[] categories, string[] processNames, string imagePath)
+    public Task<int> LoadImagesAsync(string[] categories, string[] processNames, string imagePath, string? tempImageDir = null)
     {
       _categories = categories;
       _dataPath = imagePath;
       _categorySources = new List<PyCategorySource>();
 
       int count = 0;
+      bool useTempCopy = !string.IsNullOrWhiteSpace(tempImageDir);
+
+      CleanupTempImages();
+      if (useTempCopy)
+      {
+        string today = DateTime.Now.ToString("yyyyMMdd");
+        _tempImageSessionDir = Path.Combine(tempImageDir!, today, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempImageSessionDir);
+        Console.WriteLine($"[TrainingAiHttpBridge] Using temp image session dir: {_tempImageSessionDir}");
+      }
 
       // NG categories
       foreach (var cat in categories)
@@ -169,17 +220,28 @@ namespace DeepLearningServer.Classes
         var paths = new List<string>();
         var basePath = Path.Combine(imagePath, "NG", "BASE", cat.ToUpper());
         var newPath = Path.Combine(imagePath, "NG", "NEW", cat.ToUpper());
-        if (Directory.Exists(basePath)) paths.Add(basePath);
-        if (Directory.Exists(newPath)) paths.Add(newPath);
+        var baseExists = Directory.Exists(basePath);
+        var newExists = Directory.Exists(newPath);
+        Console.WriteLine($"[TrainingAiHttpBridge] Checking NG paths for '{cat}': {basePath} (exists={baseExists}), {newPath} (exists={newExists})");
+        if (baseExists) paths.Add(basePath);
+        if (newExists) paths.Add(newPath);
 
         if (paths.Count > 0)
         {
+          var targetPaths = paths;
+          if (useTempCopy)
+          {
+            targetPaths = CopyCategoryImagesToTemp(
+                paths,
+                Path.Combine(_tempImageSessionDir!, "NG", cat.ToUpperInvariant()));
+          }
+
           _categorySources.Add(new PyCategorySource
           {
             Label = cat.ToUpper(),
-            Paths = paths
+            Paths = targetPaths
           });
-          count += CountImagesInPaths(paths);
+          count += CountImagesInPaths(targetPaths);
         }
       }
 
@@ -189,18 +251,29 @@ namespace DeepLearningServer.Classes
       {
         var basePath = Path.Combine(imagePath, "OK", proc, "BASE");
         var newPath = Path.Combine(imagePath, "OK", proc, "NEW");
-        if (Directory.Exists(basePath)) okPaths.Add(basePath);
-        if (Directory.Exists(newPath)) okPaths.Add(newPath);
+        var baseExists = Directory.Exists(basePath);
+        var newExists = Directory.Exists(newPath);
+        Console.WriteLine($"[TrainingAiHttpBridge] Checking OK paths for '{proc}': {basePath} (exists={baseExists}), {newPath} (exists={newExists})");
+        if (baseExists) okPaths.Add(basePath);
+        if (newExists) okPaths.Add(newPath);
       }
 
       if (okPaths.Count > 0)
       {
+        var targetOkPaths = okPaths;
+        if (useTempCopy)
+        {
+          targetOkPaths = CopyCategoryImagesToTemp(
+              okPaths,
+              Path.Combine(_tempImageSessionDir!, "OK"));
+        }
+
         _categorySources.Add(new PyCategorySource
         {
           Label = "OK",
-          Paths = okPaths
+          Paths = targetOkPaths
         });
-        count += CountImagesInPaths(okPaths);
+        count += CountImagesInPaths(targetOkPaths);
       }
 
       Console.WriteLine($"[TrainingAiHttpBridge] Prepared {count} images from {imagePath}");
@@ -218,6 +291,64 @@ namespace DeepLearningServer.Classes
         count += Directory.GetFiles(p, "*.png", SearchOption.AllDirectories).Length;
       }
       return count;
+    }
+
+    private static List<string> CopyCategoryImagesToTemp(IEnumerable<string> sourcePaths, string tempTargetRoot)
+    {
+      var copiedPaths = new List<string>();
+      Directory.CreateDirectory(tempTargetRoot);
+
+      foreach (var sourcePath in sourcePaths)
+      {
+        if (!Directory.Exists(sourcePath))
+        {
+          continue;
+        }
+
+        var parentName = Path.GetFileName(Path.GetDirectoryName(sourcePath) ?? string.Empty);
+        var leafName = Path.GetFileName(sourcePath);
+        var destinationPath = string.IsNullOrEmpty(parentName)
+            ? Path.Combine(tempTargetRoot, leafName)
+            : Path.Combine(tempTargetRoot, parentName, leafName);
+
+        Directory.CreateDirectory(destinationPath);
+
+        foreach (var file in EnumerateImageFiles(sourcePath))
+        {
+          var relativePath = Path.GetRelativePath(sourcePath, file);
+          var destinationFile = Path.Combine(destinationPath, relativePath);
+          var destinationFileDir = Path.GetDirectoryName(destinationFile);
+          if (!string.IsNullOrEmpty(destinationFileDir))
+          {
+            Directory.CreateDirectory(destinationFileDir);
+          }
+
+          File.Copy(file, destinationFile, true);
+        }
+
+        copiedPaths.Add(destinationPath);
+      }
+
+      return copiedPaths;
+    }
+
+    /// <summary>
+    /// Remove temporary image folder copied for Python training.
+    /// </summary>
+    public void CleanupTempImages()
+    {
+      if (!string.IsNullOrEmpty(_tempImageSessionDir) && Directory.Exists(_tempImageSessionDir))
+      {
+        try
+        {
+          Directory.Delete(_tempImageSessionDir, true);
+          Console.WriteLine($"[TrainingAiHttpBridge] Temp image folder deleted: {_tempImageSessionDir}");
+        }
+        catch (Exception ex)
+        {
+          Console.WriteLine($"[TrainingAiHttpBridge] Temp image folder cleanup failed: {ex.Message}");
+        }
+      }
     }
 
     /// <summary>
@@ -320,19 +451,38 @@ namespace DeepLearningServer.Classes
       if (string.IsNullOrEmpty(_outPath))
         throw new InvalidOperationException("Output path not set. Call SetPaths first.");
       if (_categorySources == null || _categorySources.Count == 0)
-        throw new InvalidOperationException("Category sources not set. Call LoadImagesAsync(categories, processNames, imagePath) first.");
+        throw new InvalidOperationException(
+            $"No image directories found. " +
+            $"LoadImagesAsync was called but no matching folders exist under '{_dataPath}'. " +
+            "Expected structure: NG/BASE|NEW/{CATEGORY}, OK/{processName}/BASE|NEW");
 
       _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
       // Build request
+      bool grayInput = _parameters.GrayInput ||
+                       _parameters.Classifier.GrayInput ||
+                       _parameters.Classifier.ImageChannels == 1 ||
+                       _parameters.Classifier.ImageChannels == 2;
+      bool addFft = _parameters.AddFft ||
+                    _parameters.Classifier.AddFft ||
+                    _parameters.Classifier.ImageChannels == 2 ||
+                    _parameters.Classifier.ImageChannels == 4;
+      if (string.IsNullOrEmpty(_bestModelPath))
+      {
+        _bestModelPath = Path.Combine(_outPath!, "best.onnlmodel");
+      }
+
       _lastRequest = new PyClsTrainRequest
       {
         Out = _outPath!,
+        BestModelPath = _bestModelPath,
         ImgSize = _parameters.Classifier.ImageWidth,
         Epochs = _parameters.Iterations,
         BatchSize = _parameters.Classifier.BatchSize,
         ValSplit = _parameters.ValidationProportion,
         Patience = _parameters.EarlyStoppingPatience,
+        AddFft = addFft,
+        GrayInput = grayInput,
         GeomAug = _parameters.Geometry,
         ColorAug = _parameters.Color,
         NoiseAug = _parameters.Noise,
@@ -405,6 +555,24 @@ namespace DeepLearningServer.Classes
       }
 
       _isTraining = false;
+
+      // After training completes, fetch final status to ensure BestModel is populated
+      if (!_cts.Token.IsCancellationRequested)
+      {
+        try
+        {
+          var finalStatus = await GetAsync<PyTrainStatusResponse>("/train/cls/status");
+          if (finalStatus != null)
+          {
+            _lastStatus = finalStatus;
+            Console.WriteLine($"[TrainingAiHttpBridge] Final status - BestModel: {finalStatus.BestModel ?? "(null)"}, BestAccuracy: {finalStatus.BestAccuracy}");
+          }
+        }
+        catch (Exception ex)
+        {
+          Console.WriteLine($"[TrainingAiHttpBridge] Final status fetch warning: {ex.Message}");
+        }
+      }
 
       // If cancelled, stop training on server
       if (_cts.Token.IsCancellationRequested)
@@ -526,11 +694,53 @@ namespace DeepLearningServer.Classes
     }
 
     /// <summary>
-    /// Get the path to the best model checkpoint
+    /// Get the path to the best model checkpoint.
+    /// Falls back to /train/cls/result endpoint if status doesn't have it.
     /// </summary>
     public string? GetBestModelPath()
     {
-      return _lastStatus?.BestModel;
+      if (!string.IsNullOrEmpty(_bestModelPath))
+        return _bestModelPath;
+
+      var path = _lastStatus?.BestModel;
+      if (!string.IsNullOrEmpty(path))
+        return path;
+
+      // Fallback: try to get best_model from the result endpoint
+      try
+      {
+        Console.WriteLine("[TrainingAiHttpBridge] BestModel not in status, trying result endpoint...");
+        var result = GetAsync<Dictionary<string, object>>("/train/cls/result").GetAwaiter().GetResult();
+        if (result != null && result.TryGetValue("best_model", out var bestModelObj) && bestModelObj is string bestModelStr && !string.IsNullOrEmpty(bestModelStr))
+        {
+          Console.WriteLine($"[TrainingAiHttpBridge] Got BestModel from result endpoint: {bestModelStr}");
+          return bestModelStr;
+        }
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine($"[TrainingAiHttpBridge] Failed to get BestModel from result endpoint: {ex.Message}");
+      }
+
+      // Fallback: try to get from stop endpoint (which also reports best_model)
+      try
+      {
+        Console.WriteLine("[TrainingAiHttpBridge] Trying status endpoint one more time...");
+        var status = GetAsync<PyTrainStatusResponse>("/train/cls/status").GetAwaiter().GetResult();
+        if (status != null && !string.IsNullOrEmpty(status.BestModel))
+        {
+          _lastStatus = status;
+          Console.WriteLine($"[TrainingAiHttpBridge] Got BestModel from re-fetched status: {status.BestModel}");
+          return status.BestModel;
+        }
+      }
+      catch (Exception ex)
+      {
+        Console.WriteLine($"[TrainingAiHttpBridge] Failed to re-fetch status: {ex.Message}");
+      }
+
+      Console.WriteLine("[TrainingAiHttpBridge] WARNING: Could not obtain BestModel path from any source");
+      return null;
     }
 
     /// <summary>
@@ -748,6 +958,7 @@ namespace DeepLearningServer.Classes
     {
       _cts?.Cancel();
       _cts?.Dispose();
+      CleanupTempImages();
       _client.Dispose();
     }
 
