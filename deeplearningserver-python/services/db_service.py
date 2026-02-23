@@ -1,30 +1,39 @@
+from urllib.parse import quote_plus
+
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
+
 from config import settings
+from models import Base  # noqa: F401 - model registration side effect
 
-# Create database engine - For now, we'll create a mock engine to avoid ODBC issues
-try:
-    engine = create_engine(
-        f"{settings.database_url}{settings.database_driver}",
-        pool_pre_ping=True,
-        pool_recycle=3600
-    )
-except Exception as e:
-    # If there's an issue with the real database connection, create a mock engine
-    print(f"Database connection error (this is expected in demo): {e}")
-    # We'll use an in-memory SQLite database for demonstration purposes
-    engine = create_engine('sqlite:///:memory:')
 
-# Create session factory
+def _build_database_url() -> str:
+    if settings.database_url.endswith("odbc_connect="):
+        return f"{settings.database_url}{quote_plus(settings.database_driver)}"
+    return settings.database_url
+
+
+engine = create_engine(
+    _build_database_url(),
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for models
-Base = declarative_base()
-
 def get_db():
-    db = SessionLocal()
+    db: Session = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+def init_db() -> tuple[bool, str]:
+    try:
+        # Create tables only when they do not exist.
+        Base.metadata.create_all(bind=engine)
+        return True, "Database initialized"
+    except SQLAlchemyError as exc:
+        return False, f"Database initialization skipped: {exc}"

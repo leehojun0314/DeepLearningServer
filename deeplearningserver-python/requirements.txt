@@ -1,11 +1,13 @@
 fastapi==0.104.1
 uvicorn==0.24.0
 pydantic>=2.5.0
-sqlalchemy==2.0.23
-pymssql==2.2.10
+sqlalchemy>=2.0.37
 pyodbc
 python-jose
 passlib==1.7.4
 python-multipart==0.0.6
 pydantic-settings
 python-dotenv==1.0.0
+httpx
+bcrypt
+alembic

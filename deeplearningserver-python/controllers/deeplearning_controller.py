@@ -1,221 +1,167 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import List, Dict, Any
-from pydantic import BaseModel
-from enum import Enum
-from services.db_service import get_db
-from config import settings
+from fastapi import APIRouter, HTTPException
 import httpx
 
+from config import settings
+from dtos import ImageSize, TrainingDto
+from services.mssql_db_service import MssqlDbService
+from services.tool_status_manager import ToolStatusManager
+from services.training_bridge import TrainingAiHttpBridge
+
 router = APIRouter()
+db_service = MssqlDbService()
 
-class ImageSize(str, Enum):
-    MIDDLE = "Middle"
-    LARGE = "Large"
+@router.post("/run", response_model=dict)
+async def create_tool_and_run(parameter_data: TrainingDto):
+    return {
+        "message": "Training endpoint - implementation pending",
+        "status": "not_implemented",
+        "received_image_size": parameter_data.image_size.value,
+        "received_adms_process_count": len(parameter_data.adms_process_ids),
+    }
 
-class TrainingStatus(str, Enum):
-    LOADING = "Loading"
-    RUNNING = "Running"
-    COMPLETED = "Completed"
-    FAILED = "Failed"
-    CANCELLED = "Cancelled"
 
-class Geometry(BaseModel):
-    max_rotation: int = 0
-    max_vertical_shift: int = 0
-    max_horizontal_shift: int = 0
-    min_scale: float = 1.0
-    max_scale: float = 1.0
-    max_vertical_shear: float = 0.0
-    max_horizontal_shear: float = 0.0
-    vertical_flip: bool = False
-    horizontal_flip: bool = False
-
-class Color(BaseModel):
-    max_brightness_offset: int = 0
-    min_contrast_gain: float = 1.0
-    max_contrast_gain: float = 1.0
-    min_gamma: float = 1.0
-    max_gamma: float = 1.0
-    hue_offset: int = 0
-    min_saturation_gain: float = 1.0
-    max_saturation_gain: float = 1.0
-
-class Noise(BaseModel):
-    min_gaussian_deviation: float = 0.0
-    max_gaussian_deviation: float = 0.0
-    min_speckle_deviation: float = 0.0
-    max_speckle_deviation: float = 0.0
-    min_salt_pepper_noise: float = 0.0
-    max_salt_pepper_noise: float = 0.0
-
-class Classifier(BaseModel):
-    classifier_capacity: str = "Normal"
-    image_width: int = 224
-    image_height: int = 224
-    image_cache_size: int = 100
-    image_channels: int = 3
-    add_fft: bool = False
-    gray_input: bool = False
-    use_pretrained_model: bool = False
-    compute_heat_map: bool = False
-    enable_histogram_equalization: bool = False
-    batch_size: int = 32
-    enable_deterministic_training: bool = False
-
-class TrainingDto(BaseModel):
-    adms_process_ids: List[int]
-    image_size: ImageSize
-    categories: List[str] = []
-    is_default_model: bool = False
-    client_model_destination: str = ""
-    training_proportion: float = 0.8
-    validation_proportion: float = 0.1
-    test_proportion: float = 0.1
-    iterations: int = 50
-    early_stopping_patience: int = 10
-    geometry: Geometry = Geometry()
-    color: Color = Color()
-    noise: Noise = Noise()
-    classifier: Classifier = Classifier()
-
-class ProgressEntry(BaseModel):
-    is_training: bool = True
-    progress: float = 0.0
-    best_iteration: int = 0
-    start_time: str = ""
-    end_time: str = ""
-    duration: float = 0.0
-    accuracy: float = 0.0
-    validation_accuracy: float = 0.0
-    validation_error: float = 0.0
-    training_record_id: int = 0
-
-@router.post("/run", response_model=Dict[str, Any])
-async def create_tool_and_run(parameter_data: TrainingDto, db = Depends(get_db)):
+@router.delete("/stop", response_model=dict)
+async def stop_training():
     try:
-        # Check if we should use Python server
         if settings.use_python_server:
-            # Call Python training server
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{settings.python_training_server_url}/train",
-                    json={
-                        "adms_process_ids": parameter_data.adms_process_ids,
-                        "image_size": parameter_data.image_size.value,
-                        "categories": parameter_data.categories,
-                        "is_default_model": parameter_data.is_default_model,
-                        "client_model_destination": parameter_data.client_model_destination,
-                        "training_proportion": parameter_data.training_proportion,
-                        "validation_proportion": parameter_data.validation_proportion,
-                        "test_proportion": parameter_data.test_proportion,
-                        "iterations": parameter_data.iterations,
-                        "early_stopping_patience": parameter_data.early_stopping_patience,
-                        "geometry": parameter_data.geometry.dict(),
-                        "color": parameter_data.color.dict(),
-                        "noise": parameter_data.noise.dict(),
-                        "classifier": parameter_data.classifier.dict()
-                    }
-                )
-                if response.status_code == 200:
-                    result = response.json()
-                    return {
-                        "message": "Training initialized successfully.",
-                        "training_id": result.get("training_id", "1")
-                    }
-                else:
-                    raise HTTPException(status_code=response.status_code, detail="Python server training failed")
-        else:
-            # This would be the Euresys implementation - simplified for now
-            return {
-                "message": "Training initialized successfully.",
-                "training_id": "1"
-            }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@router.delete("/stop", response_model=Dict[str, Any])
-async def stop_training(db = Depends(get_db)):
-    try:
-        # This would stop the training process
+            bridge = TrainingAiHttpBridge.current_instance
+            if bridge is not None:
+                await bridge.stop_training()
+                TrainingAiHttpBridge.set_current_instance(None)
+        ToolStatusManager.set_process_running(False)
         return {
             "message": "Training stopped and all resources disposed successfully",
-            "image_size": "Middle",
-            "status": "Success"
+            "status": "Success",
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@router.get("/result/{image_size}", response_model=Dict[str, Any])
-async def get_training_result(image_size: ImageSize, db = Depends(get_db)):
-    try:
-        # This is a simplified version - actual implementation would query database
-        return {
-            "accuracy": 0.95,
-            "precision": 0.92,
-            "recall": 0.88,
-            "f1_score": 0.90
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/confusion/{image_size}/{true_label}/{predicted_label}", response_model=Dict[str, Any])
-async def get_confusion_matrix(image_size: ImageSize, true_label: str, predicted_label: str, db = Depends(get_db)):
+@router.get("/result/{image_size}", response_model=dict)
+async def get_training_result(image_size: ImageSize):
     try:
-        # This is a simplified version - actual implementation would query database
-        return {
-            "count": 0
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return latest training labels/metrics by image size.
+        from services.db_service import SessionLocal
+        from models import TrainingRecord, Label
 
-@router.get("/getConfusionMatrix/{training_record_id}", response_model=Dict[str, Any])
-async def get_confusion_matrix(training_record_id: int, db = Depends(get_db)):
+        db = SessionLocal()
+        try:
+            latest = (
+                db.query(TrainingRecord)
+                .filter(TrainingRecord.image_size == (1 if image_size == ImageSize.LARGE else 0))
+                .order_by(TrainingRecord.created_time.desc())
+                .first()
+            )
+            if not latest:
+                return {"message": "No training record found", "image_size": image_size.value, "labels": []}
+            labels = db.query(Label).filter(Label.training_record_id == latest.id).all()
+            return {
+                "training_record_id": latest.id,
+                "image_size": image_size.value,
+                "status": latest.status,
+                "accuracy": latest.accuracy,
+                "loss": latest.loss,
+                "progress": latest.progress,
+                "labels": [{"name": item.name, "accuracy": item.accuracy} for item in labels],
+            }
+        finally:
+            db.close()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/confusion/{image_size}/{true_label}/{predicted_label}", response_model=dict)
+async def get_confusion_count(image_size: ImageSize, true_label: str, predicted_label: str):
     try:
-        # This is a simplified version - actual implementation would query database
+        from services.db_service import SessionLocal
+        from models import TrainingRecord
+
+        db = SessionLocal()
+        try:
+            latest = (
+                db.query(TrainingRecord)
+                .filter(TrainingRecord.image_size == (1 if image_size == ImageSize.LARGE else 0))
+                .order_by(TrainingRecord.created_time.desc())
+                .first()
+            )
+        finally:
+            db.close()
+        if not latest:
+            return {"count": 0}
+        matrix = await db_service.get_training_confusion_matrix(latest.id)
+        count = 0
+        for row in matrix:
+            if (
+                row["trueLabel"].upper() == true_label.upper()
+                and row["predictedLabel"].upper() == predicted_label.upper()
+            ):
+                count = row["count"]
+                break
+        return {"count": count}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/getConfusionMatrix/{training_record_id}", response_model=dict)
+async def get_confusion_matrix(training_record_id: int):
+    try:
+        matrix = await db_service.get_training_confusion_matrix(training_record_id)
         return {
             "training_record_id": training_record_id,
-            "confusion_matrix": [],
-            "message": "Dynamically calculated from TrainingImageResult table"
+            "confusion_matrix": matrix,
+            "message": "Dynamically calculated from TrainingImageResult table",
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@router.get("/getConfusionMatrixImages/{training_record_id}/{true_label}/{predicted_label}", response_model=Dict[str, Any])
-async def get_confusion_matrix_images(training_record_id: int, true_label: str, predicted_label: str, db = Depends(get_db)):
+
+@router.get("/getConfusionMatrixImages/{training_record_id}/{true_label}/{predicted_label}", response_model=dict)
+async def get_confusion_matrix_images(training_record_id: int, true_label: str, predicted_label: str):
     try:
-        # This is a simplified version - actual implementation would query database
+        images = await db_service.get_training_images_by_labels(training_record_id, true_label, predicted_label)
         return {
             "training_record_id": training_record_id,
             "true_label": true_label,
             "predicted_label": predicted_label,
-            "image_count": 0,
-            "images": [],
-            "message": "Retrieved from simplified TrainingImageResult table"
+            "image_count": len(images),
+            "images": images,
+            "message": "Retrieved from simplified TrainingImageResult table",
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@router.get("/getConfusionMatrixImageFiles/{training_record_id}/{true_label}/{predicted_label}", response_model=Dict[str, Any])
-async def get_confusion_matrix_image_files(training_record_id: int, true_label: str, predicted_label: str, db = Depends(get_db)):
+
+@router.get("/getConfusionMatrixImageFiles/{training_record_id}/{true_label}/{predicted_label}", response_model=dict)
+async def get_confusion_matrix_image_files(training_record_id: int, true_label: str, predicted_label: str):
     try:
-        # This is a simplified version - actual implementation would query database
+        images = await db_service.get_training_images_by_labels(training_record_id, true_label, predicted_label)
+        image_files = [row["imageFile"] for row in images if row.get("imageFile")]
         return {
             "training_record_id": training_record_id,
             "true_label": true_label,
             "predicted_label": predicted_label,
-            "image_count": 0,
-            "image_files": [],
-            "message": "Retrieved from simplified TrainingImageResult table"
+            "image_count": len(image_files),
+            "image_files": image_files,
+            "message": "Retrieved from simplified TrainingImageResult table",
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@router.get("/load/{image_size}", response_model=Dict[str, Any])
-async def load_model(image_size: ImageSize, model_file_path: str = "", settings_file_path: str = "", db = Depends(get_db)):
+
+@router.get("/load/{image_size}", response_model=dict)
+async def load_model(image_size: ImageSize, model_file_path: str = "", settings_file_path: str = ""):
     try:
-        # This is a simplified version - actual implementation would load model
-        return {
-            "status": "Ok"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        if not settings.use_python_server:
+            return {"status": "Ok", "message": "Python server disabled, skipped."}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{settings.python_training_server_url}/infer/cls/load",
+                json={"image_size": image_size.value, "model_file_path": model_file_path, "settings_file_path": settings_file_path},
+            )
+            if response.is_success:
+                return {"status": "Ok", "response": response.json() if response.text else {}}
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

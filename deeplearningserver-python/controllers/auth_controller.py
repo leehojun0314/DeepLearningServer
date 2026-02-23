@@ -1,32 +1,44 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Dict
+from sqlalchemy.orm import Session
+
 from services.auth_service import AuthService
-from config import settings
+from services.db_service import get_db
 
 router = APIRouter()
+
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 class RegisterRequest(BaseModel):
     username: str
     password: str
     email: str
 
-@router.post("/register", response_model=Dict[str, str])
-async def register(request: RegisterRequest, auth_service: AuthService = Depends()):
-    try:
-        result = await auth_service.register_user(request.username, request.password, request.email)
-        return {"message": "User registered successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/login", response_model=Dict[str, str])
-async def login(request: LoginRequest, auth_service: AuthService = Depends()):
+@router.post("/register", response_model=dict)
+async def register(
+    request: RegisterRequest,
+    db: Session = Depends(get_db),
+):
+    auth_service = AuthService()
     try:
-        token = await auth_service.login_user(request.username, request.password)
+        return await auth_service.register_user(db, request.username, request.password, request.email)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/login", response_model=dict)
+async def login(
+    request: LoginRequest,
+    db: Session = Depends(get_db),
+):
+    auth_service = AuthService()
+    try:
+        token = await auth_service.login_user(db, request.username, request.password)
         return {"token": token}
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc

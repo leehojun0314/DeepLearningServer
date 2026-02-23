@@ -1,11 +1,26 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Response
+import logging
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
 import uvicorn
-from controllers import auth_controller, model_controller, inference_controller, adms_controller, deeplearning_controller
-from services.db_service import get_db
+
+from controllers import adms_controller, auth_controller, deeplearning_controller, inference_controller, model_controller
 from config import settings
+from services.db_service import init_db
+from services.mssql_db_service import MssqlDbService
+
+log_dir = Path("logs")
+log_dir.mkdir(exist_ok=True)
+log_file = log_dir / f"app-{datetime.now().strftime('%Y-%m-%d')}.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()],
+)
+logger = logging.getLogger("deeplearningserver")
+db_service = MssqlDbService()
 
 # Create FastAPI app
 app = FastAPI(
@@ -13,6 +28,15 @@ app = FastAPI(
     description="Python-based Deep Learning Server API",
     version="1.0.0"
 )
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    ok, msg = init_db()
+    if ok:
+        logger.info(msg)
+    else:
+        logger.warning(msg)
 
 # Add CORS middleware
 app.add_middleware(
@@ -36,17 +60,22 @@ async def root():
     return {
         "status": "OK",
         "message": "ADMS DeepLearning Server is running",
-        "timestamp": "2026-02-17 03:52:32",
+        "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
-        "environment": "production"
+        "environment": "production",
     }
 
 # Error handling
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+    logger.exception("Unhandled exception: %s", exc)
+    try:
+        await db_service.insert_log(f"Unhandled exception: {exc}", "Error")
+    except Exception:
+        pass
     return Response(
         status_code=500,
-        content='{"detail": "Internal server error"}'
+        content='{"detail": "Internal server error"}',
     )
 
 if __name__ == "__main__":
