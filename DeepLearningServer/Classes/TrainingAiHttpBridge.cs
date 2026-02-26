@@ -503,6 +503,7 @@ namespace DeepLearningServer.Classes
 
       // Poll for progress
       int bestIteration = 0;
+      int lastReportedEpoch = -1;
       while (!_cts.Token.IsCancellationRequested)
       {
         try
@@ -517,9 +518,14 @@ namespace DeepLearningServer.Classes
               bestIteration = _lastStatus.CurrentEpoch;
             }
 
-            // Invoke callback
-            if (callback != null)
+            bool epochChanged = _lastStatus.CurrentEpoch != lastReportedEpoch &&
+                                _lastStatus.CurrentEpoch > 0;
+            bool trainingEnded = !_lastStatus.Running && lastReportedEpoch >= 0;
+
+            // Invoke callback only when epoch changes or when training ends.
+            if (callback != null && (epochChanged || trainingEnded))
             {
+              lastReportedEpoch = _lastStatus.CurrentEpoch;
               await callback(
                   _lastStatus.Running,
                   _lastStatus.Progress,

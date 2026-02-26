@@ -1,4 +1,4 @@
-﻿using System.IdentityModel.Tokens.Jwt;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.ComponentModel.DataAnnotations;
@@ -123,11 +123,12 @@ public class AuthController : ControllerBase
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var accessTokenExpiresHours = _configuration.GetValue<double?>("Jwt:AccessTokenExpiresHours") ?? 2;
         var token = new JwtSecurityToken(
             null,
             null,
             claims,
-            expires: DateTime.UtcNow.AddHours(2),
+            expires: DateTime.UtcNow.AddHours(accessTokenExpiresHours),
             signingCredentials: creds
         );
 
