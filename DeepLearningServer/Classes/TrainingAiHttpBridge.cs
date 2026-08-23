@@ -61,8 +61,11 @@ namespace DeepLearningServer.Classes
     private string[]? _categories;
     private List<PyCategorySource>? _categorySources;
     private string? _tempImageSessionDir;
+    private string? _currentRunId;
+    private int _preparedImageCount;
     private bool _isTraining;
     private CancellationTokenSource? _cts;
+    private const int MaxStatusPollFailures = 5;
 
     /// <summary>
     /// Currently active bridge instance for external stop requests.
@@ -88,6 +91,10 @@ namespace DeepLearningServer.Classes
         _currentInstance = instance;
       }
     }
+
+    public string? CurrentRunId => _currentRunId;
+
+    public PyTrainStatusResponse? GetLastStatusSnapshot() => _lastStatus;
 
     /// <summary>
     /// Create a new HTTP training bridge
@@ -186,6 +193,7 @@ namespace DeepLearningServer.Classes
       }
 
       Console.WriteLine($"[TrainingAiHttpBridge] Prepared {count} images from {imagePath}");
+      _preparedImageCount = count;
       return Task.FromResult(count);
     }
 
@@ -239,7 +247,8 @@ namespace DeepLearningServer.Classes
           _categorySources.Add(new PyCategorySource
           {
             Label = cat.ToUpper(),
-            Paths = targetPaths
+            Paths = targetPaths,
+            OriginalPaths = useTempCopy ? paths : null
           });
           count += CountImagesInPaths(targetPaths);
         }
@@ -271,12 +280,14 @@ namespace DeepLearningServer.Classes
         _categorySources.Add(new PyCategorySource
         {
           Label = "OK",
-          Paths = targetOkPaths
+          Paths = targetOkPaths,
+          OriginalPaths = useTempCopy ? okPaths : null
         });
         count += CountImagesInPaths(targetOkPaths);
       }
 
       Console.WriteLine($"[TrainingAiHttpBridge] Prepared {count} images from {imagePath}");
+      _preparedImageCount = count;
       return Task.FromResult(count);
     }
 
@@ -363,15 +374,23 @@ namespace DeepLearningServer.Classes
         return records;
       }
 
-      foreach (var source in _categorySources)
+      for (var sourceIndex = 0; sourceIndex < _categorySources.Count; sourceIndex++)
       {
+        var source = _categorySources[sourceIndex];
         if (source.Paths == null)
         {
           continue;
         }
 
-        foreach (var path in source.Paths)
+        var originalPaths = source.OriginalPaths;
+        for (var pathIndex = 0; pathIndex < source.Paths.Count; pathIndex++)
         {
+          var path = source.Paths[pathIndex];
+          // DB 저장용: 임시 경로가 있으면 원본 경로로 변환 (임시 폴더는 훈련 후 삭제되므로)
+          var originalPath = (originalPaths != null && pathIndex < originalPaths.Count)
+              ? originalPaths[pathIndex]
+              : path;
+
           if (!Directory.Exists(path))
           {
             continue;
@@ -380,6 +399,9 @@ namespace DeepLearningServer.Classes
           foreach (var file in EnumerateImageFiles(path))
           {
             var status = ResolveStatusFromPath(file);
+            // 임시 경로 → 원본 경로로 변환 (동일한 상대 경로 유지)
+            var relativePath = Path.GetRelativePath(path, file);
+            var pathForDb = Path.Combine(originalPath, relativePath);
 
             if (source.Label.Equals("OK", StringComparison.OrdinalIgnoreCase))
             {
@@ -393,12 +415,12 @@ namespace DeepLearningServer.Classes
                 }
               }
 
-              records.Add((file, "OK", status, null, admsProcessId));
+              records.Add((pathForDb, "OK", status, null, admsProcessId));
             }
             else
             {
               var label = source.Label.ToUpperInvariant();
-              records.Add((file, label, status, label, null));
+              records.Add((pathForDb, label, status, label, null));
             }
           }
         }
@@ -441,6 +463,50 @@ namespace DeepLearningServer.Classes
 
     #region Training
 
+    private static int ResolveValidationMinimum(int preparedImageCount, float valSplit)
+    {
+      if (valSplit <= 0f || preparedImageCount <= 1)
+        return 0;
+
+      return Math.Min(32, Math.Max(1, preparedImageCount - 1));
+    }
+
+    private static void ValidateTrainRequest(PyClsTrainRequest request)
+    {
+      if (request.ImgSize < 8)
+        throw new InvalidOperationException($"Invalid img_size: {request.ImgSize}. Must be >= 8.");
+      if (request.Epochs < 1)
+        throw new InvalidOperationException($"Invalid epochs: {request.Epochs}. Must be >= 1.");
+      if (request.BatchSize < 1)
+        throw new InvalidOperationException($"Invalid batch_size: {request.BatchSize}. Must be >= 1.");
+      if (request.Workers < 0)
+        throw new InvalidOperationException($"Invalid workers: {request.Workers}. Must be >= 0.");
+      if (request.ValSplit < 0f || request.ValSplit > 1f)
+        throw new InvalidOperationException($"Invalid val_split: {request.ValSplit}. Must be between 0 and 1.");
+      if (request.Patience < 0)
+        throw new InvalidOperationException($"Invalid patience: {request.Patience}. Must be >= 0.");
+      if (request.CategorySources == null || request.CategorySources.Count == 0)
+        throw new InvalidOperationException("category_sources is empty.");
+    }
+
+    private static bool IsTerminalStatus(PyTrainStatusResponse? status)
+    {
+      var statusText = status?.Status?.Trim().ToLowerInvariant();
+      return statusText is "completed" or "stopped" or "failed";
+    }
+
+    private static bool IsCancelledStatus(PyTrainStatusResponse? status)
+    {
+      var statusText = status?.Status?.Trim().ToLowerInvariant();
+      return status?.StoppedByUser == true || statusText is "stopped" or "cancelled";
+    }
+
+    private static bool IsFailedStatus(PyTrainStatusResponse? status)
+    {
+      var statusText = status?.Status?.Trim().ToLowerInvariant();
+      return statusText == "failed";
+    }
+
     /// <summary>
     /// Start training asynchronously with progress callback
     /// </summary>
@@ -469,7 +535,7 @@ namespace DeepLearningServer.Classes
                     _parameters.Classifier.ImageChannels == 4;
       if (string.IsNullOrEmpty(_bestModelPath))
       {
-        _bestModelPath = Path.Combine(_outPath!, "best.onnlmodel");
+        _bestModelPath = Path.Combine(_outPath!, "best.onelmodel");
       }
 
       _lastRequest = new PyClsTrainRequest
@@ -486,16 +552,21 @@ namespace DeepLearningServer.Classes
         GeomAug = _parameters.Geometry,
         ColorAug = _parameters.Color,
         NoiseAug = _parameters.Noise,
+        ValMin = ResolveValidationMinimum(_preparedImageCount, _parameters.ValidationProportion),
         CategorySources = _categorySources
       };
+      ValidateTrainRequest(_lastRequest);
 
       // Start training
       Console.WriteLine($"[TrainingAiHttpBridge] Starting training: {_baseUrl}/train/cls/start");
       var startResponse = await PostAsync<PyTrainStartResponse>("/train/cls/start", _lastRequest);
+      _currentRunId = startResponse?.RunId;
 
       if (startResponse?.Result != "started")
       {
-        throw new InvalidOperationException($"Failed to start training: {startResponse?.Result}");
+        throw new InvalidOperationException(
+            $"Failed to start training: {startResponse?.Result}. " +
+            $"status={startResponse?.Status ?? "(null)"}, run_id={startResponse?.RunId ?? "(null)"}");
       }
 
       _isTraining = true;
@@ -504,30 +575,41 @@ namespace DeepLearningServer.Classes
       // Poll for progress
       int bestIteration = 0;
       int lastReportedEpoch = -1;
+      int consecutivePollFailures = 0;
       while (!_cts.Token.IsCancellationRequested)
       {
         try
         {
           _lastStatus = await GetAsync<PyTrainStatusResponse>("/train/cls/status");
+          consecutivePollFailures = 0;
 
           if (_lastStatus != null)
           {
+            if (!string.IsNullOrEmpty(_currentRunId) &&
+                !string.IsNullOrEmpty(_lastStatus.RunId) &&
+                !string.Equals(_currentRunId, _lastStatus.RunId, StringComparison.OrdinalIgnoreCase))
+            {
+              throw new InvalidOperationException(
+                  $"Status run_id mismatch. expected={_currentRunId}, actual={_lastStatus.RunId}");
+            }
+
             // Track best iteration
             if (_lastStatus.CurrentAccuracy >= _lastStatus.BestAccuracy && _lastStatus.CurrentEpoch > 0)
             {
               bestIteration = _lastStatus.CurrentEpoch;
             }
 
+            bool serverBusy = _lastStatus.Running || _lastStatus.Finalizing;
             bool epochChanged = _lastStatus.CurrentEpoch != lastReportedEpoch &&
                                 _lastStatus.CurrentEpoch > 0;
-            bool trainingEnded = !_lastStatus.Running && lastReportedEpoch >= 0;
+            bool trainingEnded = !serverBusy && (lastReportedEpoch >= 0 || IsTerminalStatus(_lastStatus));
 
             // Invoke callback only when epoch changes or when training ends.
             if (callback != null && (epochChanged || trainingEnded))
             {
               lastReportedEpoch = _lastStatus.CurrentEpoch;
               await callback(
-                  _lastStatus.Running,
+                  serverBusy,
                   _lastStatus.Progress,
                   bestIteration,
                   _lastStatus.CurrentAccuracy,
@@ -538,16 +620,24 @@ namespace DeepLearningServer.Classes
             }
 
             // Check if training completed
-            if (!_lastStatus.Running)
+            if (!serverBusy && IsTerminalStatus(_lastStatus))
             {
-              Console.WriteLine("[TrainingAiHttpBridge] Training completed");
+              Console.WriteLine($"[TrainingAiHttpBridge] Training terminal status: {_lastStatus.Status}");
               break;
             }
           }
         }
         catch (Exception ex)
         {
-          Console.WriteLine($"[TrainingAiHttpBridge] Status poll error: {ex.Message}");
+          consecutivePollFailures++;
+          Console.WriteLine($"[TrainingAiHttpBridge] Status poll error ({consecutivePollFailures}/{MaxStatusPollFailures}): {ex.Message}");
+          if (consecutivePollFailures >= MaxStatusPollFailures)
+          {
+            var logTail = await SafeGetLogTailAsync();
+            throw new InvalidOperationException(
+                $"Training status polling failed repeatedly. Last error: {ex.Message}. " +
+                $"Recent log tail: {logTail}");
+          }
         }
 
         try
@@ -592,6 +682,27 @@ namespace DeepLearningServer.Classes
           // Stop errors during cancellation are logged but not propagated
           Console.WriteLine($"[TrainingAiHttpBridge] Stop during cancellation warning: {ex.Message}");
         }
+        throw new OperationCanceledException("Training cancelled by caller.");
+      }
+
+      if (IsCancelledStatus(_lastStatus))
+      {
+        throw new OperationCanceledException(
+            $"Training stopped. status={_lastStatus?.Status}, run_id={_lastStatus?.RunId}");
+      }
+
+      if (IsFailedStatus(_lastStatus))
+      {
+        var logTail = await SafeGetLogTailAsync();
+        throw new InvalidOperationException(
+            $"Training failed. run_id={_lastStatus?.RunId}, error={_lastStatus?.Error ?? "(none)"}, " +
+            $"phase={_lastStatus?.Phase ?? "(none)"}, log_tail={logTail}");
+      }
+
+      if (_lastStatus != null && !_lastStatus.ArtifactReady)
+      {
+        throw new InvalidOperationException(
+            $"Training finished without ready artifact. status={_lastStatus.Status}, run_id={_lastStatus.RunId}");
       }
     }
 
@@ -618,8 +729,11 @@ namespace DeepLearningServer.Classes
     {
       Console.WriteLine("[TrainingAiHttpBridge] Stopping training...");
       var response = await PostAsync<PyTrainStopResponse>("/train/cls/stop", new { });
-      _isTraining = false;
-      Console.WriteLine($"[TrainingAiHttpBridge] Stop result: {response?.Result}");
+      if (response?.Status is "stopped" or "completed" or "failed")
+      {
+        _isTraining = false;
+      }
+      Console.WriteLine($"[TrainingAiHttpBridge] Stop result: {response?.Result}, status={response?.Status}, run_id={response?.RunId}");
       return response;
     }
 
@@ -637,7 +751,7 @@ namespace DeepLearningServer.Classes
       {
         var status = GetAsync<PyTrainStatusResponse>("/train/cls/status").GetAwaiter().GetResult();
         _lastStatus = status;
-        return status?.Running ?? false;
+        return (status?.Running ?? false) || (status?.Finalizing ?? false);
       }
       catch (Exception ex)
       {
@@ -705,11 +819,11 @@ namespace DeepLearningServer.Classes
     /// </summary>
     public string? GetBestModelPath()
     {
-      if (!string.IsNullOrEmpty(_bestModelPath))
+      if (!string.IsNullOrEmpty(_bestModelPath) && File.Exists(_bestModelPath))
         return _bestModelPath;
 
       var path = _lastStatus?.BestModel;
-      if (!string.IsNullOrEmpty(path))
+      if (!string.IsNullOrEmpty(path) && File.Exists(path) && (_lastStatus?.ArtifactReady ?? true))
         return path;
 
       // Fallback: try to get best_model from the result endpoint
@@ -756,6 +870,23 @@ namespace DeepLearningServer.Classes
     {
       var response = await GetAsync<PyTrainLogResponse>("/train/cls/log");
       return response?.Log ?? string.Empty;
+    }
+
+    private async Task<string> SafeGetLogTailAsync(int maxLength = 1200)
+    {
+      try
+      {
+        var log = await GetLogAsync();
+        if (string.IsNullOrEmpty(log))
+          return "(empty)";
+        if (log.Length <= maxLength)
+          return log;
+        return log.Substring(log.Length - maxLength, maxLength);
+      }
+      catch (Exception ex)
+      {
+        return $"(failed to fetch log: {ex.Message})";
+      }
     }
 
     #endregion
@@ -863,9 +994,9 @@ namespace DeepLearningServer.Classes
     #region Model Export
 
     /// <summary>
-    /// Save/export model to .onnlmodel format
+    /// Save/export model to .onelmodel format
     /// </summary>
-    /// <param name="outputPath">Destination path for .onnlmodel</param>
+    /// <param name="outputPath">Destination path for .onelmodel</param>
     /// <param name="checkpointPath">Source checkpoint path (null = use best from training)</param>
     public async Task<string> SaveModelAsync(string outputPath, string? checkpointPath = null)
     {
@@ -883,7 +1014,7 @@ namespace DeepLearningServer.Classes
         OutPath = outputPath
       };
 
-      var response = await PostAsync<PyOnnlPackResponse>("/export/cls/onnl_pack", request);
+      var response = await PostAsync<PyOnnlPackResponse>("/export/cls/onel_pack", request);
 
       if (!string.IsNullOrEmpty(response?.Error))
       {
@@ -900,21 +1031,35 @@ namespace DeepLearningServer.Classes
 
     private async Task<T?> GetAsync<T>(string endpoint) where T : class
     {
-      var url = _baseUrl + endpoint;
-      var response = await _client.GetAsync(url);
-      response.EnsureSuccessStatusCode();
-      var json = await response.Content.ReadAsStringAsync();
-      return JsonConvert.DeserializeObject<T>(json);
+      return await SendAsync<T>(HttpMethod.Get, endpoint, null);
     }
 
     private async Task<T?> PostAsync<T>(string endpoint, object body) where T : class
     {
+      return await SendAsync<T>(HttpMethod.Post, endpoint, body);
+    }
+
+    private async Task<T?> SendAsync<T>(HttpMethod method, string endpoint, object? body) where T : class
+    {
       var url = _baseUrl + endpoint;
-      var json = JsonConvert.SerializeObject(body);
-      var content = new StringContent(json, Encoding.UTF8, "application/json");
-      var response = await _client.PostAsync(url, content);
-      response.EnsureSuccessStatusCode();
+      using var request = new HttpRequestMessage(method, url);
+      if (body != null)
+      {
+        var json = JsonConvert.SerializeObject(body);
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+      }
+
+      using var response = await _client.SendAsync(request);
       var responseJson = await response.Content.ReadAsStringAsync();
+      if (!response.IsSuccessStatusCode)
+      {
+        throw new HttpRequestException(
+            $"Request to {endpoint} failed with {(int)response.StatusCode} ({response.StatusCode}). Body: {responseJson}");
+      }
+
+      if (string.IsNullOrWhiteSpace(responseJson))
+        return null;
+
       return JsonConvert.DeserializeObject<T>(responseJson);
     }
 
@@ -964,6 +1109,7 @@ namespace DeepLearningServer.Classes
     {
       _cts?.Cancel();
       _cts?.Dispose();
+      _currentRunId = null;
       CleanupTempImages();
       _client.Dispose();
     }

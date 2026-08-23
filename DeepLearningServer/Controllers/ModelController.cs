@@ -1,4 +1,4 @@
-﻿using DeepLearningServer.Dtos;
+using DeepLearningServer.Dtos;
 using DeepLearningServer.Settings;
 using Euresys.Open_eVision.EasyDeepLearning;
 using Microsoft.AspNetCore.Mvc;
@@ -60,7 +60,7 @@ namespace DeepLearningServer.Controllers
                 var models = new List<ModelInfoDto>();
                 string baseModelDirectory = _serverSettings.ModelDirectory;
 
-                // 경로 구조 예시: D:/Transfer/{SIZE}/{TYPE}/{AdmsName}/{ProcessId}.edltool
+                // 경로 구조 예시: D:/Transfer/{SIZE}/{TYPE}/{AdmsName}/{ProcessId}.onelmodel
                 var searchSizes = string.IsNullOrEmpty(size) ? validSizes : new[] { size.ToUpper() };
 
                 foreach (var searchSize in searchSizes)
@@ -70,8 +70,11 @@ namespace DeepLearningServer.Controllers
                     if (!Directory.Exists(searchPath))
                         continue;
 
-                    // 하위 모든 디렉토리를 재귀적으로 탐색하여 .edltool 파일 수집
-                    var modelFiles = Directory.GetFiles(searchPath, "*.edltool", SearchOption.AllDirectories);
+                    // 하위 모든 디렉토리를 재귀적으로 탐색하여 .onelmodel 파일 수집 (기존 .onnlmodel도 조회)
+                    var modelFiles = Directory.GetFiles(searchPath, "*.onelmodel", SearchOption.AllDirectories)
+                        .Concat(Directory.GetFiles(searchPath, "*.onnlmodel", SearchOption.AllDirectories))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
 
                     foreach (var modelFile in modelFiles)
                     {
@@ -245,7 +248,7 @@ namespace DeepLearningServer.Controllers
                 }
 
                 // 기존 모델 파일들 가져오기
-                string[] modelFiles = Directory.GetFiles(oldModelsPath, "*.edltool");
+                string[] modelFiles = Directory.GetFiles(oldModelsPath, "*.onnlmodel");
                 if (Directory.Exists(projectDir))
                 {
                     // 기존 프로젝트 폴더 삭제

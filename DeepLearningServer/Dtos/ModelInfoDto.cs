@@ -1,89 +1,89 @@
 namespace DeepLearningServer.Dtos
 {
     /// <summary>
-    /// 저장된 모델 파일의 정보를 나타내는 DTO 클래스입니다.
+    /// DTO that describes a saved model file.
     /// </summary>
     public class ModelInfoDto
     {
         /// <summary>
-        /// 모델 파일명 (예: "123.edltool")
+        /// Model file name (e.g. "123.onelmodel")
         /// </summary>
         public string FileName { get; set; } = string.Empty;
 
         /// <summary>
-        /// 전체 파일 경로
+        /// Full file path.
         /// </summary>
         public string FullPath { get; set; } = string.Empty;
 
         /// <summary>
-        /// 상대 경로 (ModelDirectory 기준)
+        /// Relative path from ModelDirectory.
         /// </summary>
         public string RelativePath { get; set; } = string.Empty;
 
         /// <summary>
-        /// 이미지 크기 (LARGE, MIDDLE)
+        /// Image size (LARGE, MIDDLE).
         /// </summary>
         public string Size { get; set; } = string.Empty;
 
         /// <summary>
-        /// 모델 타입 (BASE, Release, EVALUATION)
+        /// Model type (BASE, Release, EVALUATION).
         /// </summary>
         public string Type { get; set; } = string.Empty;
 
         /// <summary>
-        /// ADMS 이름
+        /// ADMS name.
         /// </summary>
         public string AdmsName { get; set; } = string.Empty;
 
         /// <summary>
-        /// 프로세스 ID (파일명에서 추출)
+        /// Process ID parsed from file name.
         /// </summary>
         public string ProcessId { get; set; } = string.Empty;
 
         /// <summary>
-        /// 파일 크기 (바이트)
+        /// File size in bytes.
         /// </summary>
         public long FileSizeBytes { get; set; }
 
         /// <summary>
-        /// 파일 크기 (읽기 쉬운 형태)
+        /// Human-readable file size.
         /// </summary>
         public string FileSizeFormatted { get; set; } = string.Empty;
 
         /// <summary>
-        /// 파일 생성일시
+        /// File creation timestamp.
         /// </summary>
         public DateTime CreatedDate { get; set; }
 
         /// <summary>
-        /// 파일 수정일시
+        /// File modification timestamp.
         /// </summary>
         public DateTime ModifiedDate { get; set; }
     }
 
     /// <summary>
-    /// 모델 조회 요청 매개변수를 나타내는 DTO 클래스입니다.
+    /// Request DTO for model list query.
     /// </summary>
     public class ModelListRequestDto
     {
         /// <summary>
-        /// 이미지 크기 필터 (LARGE, MIDDLE, 또는 전체)
+        /// Image size filter (LARGE, MIDDLE, or all).
         /// </summary>
         public string? Size { get; set; }
 
         /// <summary>
-        /// 모델 타입 필터 (BASE, Release, EVALUATION, 또는 전체)
+        /// Model type filter (BASE, Release, EVALUATION, or all).
         /// </summary>
         public string? Type { get; set; }
 
         /// <summary>
-        /// ADMS 이름 필터 (특정 ADMS만 조회)
+        /// ADMS name filter.
         /// </summary>
         public string? AdmsName { get; set; }
 
         /// <summary>
-        /// 프로세스 ID 필터 (특정 프로세스만 조회)
+        /// Process ID filter.
         /// </summary>
         public string? ProcessId { get; set; }
     }
-} 
+}

@@ -304,6 +304,10 @@ namespace DeepLearningServer.Dtos
     /// <summary>Image directory paths for this label</summary>
     [JsonProperty("paths")]
     public List<string> Paths { get; set; } = new();
+
+    /// <summary>원본 이미지 경로(DB 저장용). useTempCopy일 때 Paths는 임시 경로, 이 필드는 원본 경로. Python으로 전송하지 않음.</summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public List<string>? OriginalPaths { get; set; }
   }
 
   /// <summary>
@@ -319,7 +323,7 @@ namespace DeepLearningServer.Dtos
     [JsonProperty("out")]
     public string Out { get; set; } = string.Empty;
 
-    /// <summary>Full path to save the best model as .onnlmodel after training</summary>
+    /// <summary>Full path to save the best model as .onelmodel after training</summary>
     [JsonProperty("best_model_path")]
     public string? BestModelPath { get; set; }
 
@@ -462,9 +466,21 @@ namespace DeepLearningServer.Dtos
   /// </summary>
   public class PyTrainStatusResponse
   {
+    [JsonProperty("run_id")]
+    public string? RunId { get; set; }
+
+    [JsonProperty("status")]
+    public string? Status { get; set; }
+
+    [JsonProperty("phase")]
+    public string? Phase { get; set; }
+
     /// <summary>Whether training is currently running</summary>
     [JsonProperty("running")]
     public bool Running { get; set; }
+
+    [JsonProperty("finalizing")]
+    public bool Finalizing { get; set; }
 
     /// <summary>Progress ratio (0.0 to 1.0)</summary>
     [JsonProperty("progress")]
@@ -498,6 +514,15 @@ namespace DeepLearningServer.Dtos
     [JsonProperty("best_model")]
     public string? BestModel { get; set; }
 
+    [JsonProperty("artifact_ready")]
+    public bool ArtifactReady { get; set; }
+
+    [JsonProperty("stopped_by_user")]
+    public bool StoppedByUser { get; set; }
+
+    [JsonProperty("error")]
+    public string? Error { get; set; }
+
     /// <summary>Last update timestamp</summary>
     [JsonProperty("last_update")]
     public string? LastUpdate { get; set; }
@@ -510,6 +535,12 @@ namespace DeepLearningServer.Dtos
   {
     [JsonProperty("result")]
     public string Result { get; set; } = string.Empty;
+
+    [JsonProperty("run_id")]
+    public string? RunId { get; set; }
+
+    [JsonProperty("status")]
+    public string? Status { get; set; }
   }
 
   /// <summary>
@@ -520,11 +551,17 @@ namespace DeepLearningServer.Dtos
     [JsonProperty("result")]
     public string Result { get; set; } = string.Empty;
 
+    [JsonProperty("run_id")]
+    public string? RunId { get; set; }
+
     [JsonProperty("status")]
     public string? Status { get; set; }
 
     [JsonProperty("best_model")]
     public string? BestModel { get; set; }
+
+    [JsonProperty("artifact_ready")]
+    public bool ArtifactReady { get; set; }
 
     [JsonProperty("out_dir")]
     public string? OutDir { get; set; }
@@ -534,7 +571,7 @@ namespace DeepLearningServer.Dtos
   }
 
   /// <summary>
-  /// ONNL pack export request
+  /// ONEL pack export request
   /// </summary>
   public class PyOnnlPackRequest
   {
@@ -555,7 +592,7 @@ namespace DeepLearningServer.Dtos
   }
 
   /// <summary>
-  /// ONNL pack export response
+  /// ONEL pack export response
   /// </summary>
   public class PyOnnlPackResponse
   {
@@ -574,6 +611,12 @@ namespace DeepLearningServer.Dtos
   /// </summary>
   public class PyTrainLogResponse
   {
+    [JsonProperty("run_id")]
+    public string? RunId { get; set; }
+
+    [JsonProperty("status")]
+    public string? Status { get; set; }
+
     [JsonProperty("log")]
     public string Log { get; set; } = string.Empty;
   }

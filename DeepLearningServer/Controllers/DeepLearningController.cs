@@ -33,6 +33,21 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     private readonly IConfiguration _configuration = configuration;
     private int _recordId = 0;
 
+    private static string? ValidatePythonTrainingParameters(TrainingDto parameterData)
+    {
+        if (parameterData.Iterations < 1)
+            return "Iterations must be greater than or equal to 1.";
+        if (parameterData.ValidationProportion < 0f || parameterData.ValidationProportion > 1f)
+            return "ValidationProportion must be between 0 and 1.";
+        if (parameterData.EarlyStoppingPatience < 0)
+            return "EarlyStoppingPatience must be greater than or equal to 0.";
+        if (parameterData.Classifier.ImageWidth < 8 || parameterData.Classifier.ImageHeight < 8)
+            return "ImageWidth/ImageHeight must be greater than or equal to 8.";
+        if (parameterData.Classifier.BatchSize < 1)
+            return "BatchSize must be greater than or equal to 1.";
+        return null;
+    }
+
     /// <summary>
     /// 모델 훈련을 생성하고 실행합니다.
     /// </summary>
@@ -134,6 +149,16 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 parameterData.Classifier.GrayInput,
                 parameterData.Classifier.AddFft);
 
+            if (usePythonServer)
+            {
+                var validationError = ValidatePythonTrainingParameters(parameterData);
+                if (!string.IsNullOrEmpty(validationError))
+                {
+                    ToolStatusManager.SetProcessRunning(false);
+                    return BadRequest(validationError);
+                }
+            }
+
             TrainingRecord record = _mapper.Map<TrainingRecord>(parameterData);
             record.CreatedTime = DateTime.Now; // 요청을 받자마자 기록
             record.Status = TrainingStatus.Loading; // 이미지 로딩 단계로 시작
@@ -232,8 +257,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                         string firstAdmsName = !string.IsNullOrWhiteSpace(firstAdms.Name)
                             ? firstAdms.Name
                             : throw new InvalidOperationException($"ADMS name is empty for id: {firstAdmsId}");
-                        string outputPath = Path.Combine(_serverSettings.EvaluationModelDirectory, sizeFolder, firstAdmsName);
-                        string bestModelFullPath = Path.Combine(outputPath, $"{firstProcessName}.onnlmodel");
+                        string outputPath = Path.Combine(_serverSettings.EvaluationModelDirectory, sizeFolder, firstAdmsName, "_runs", record.Id.ToString());
+                        string bestModelFullPath = Path.Combine(outputPath, $"{firstProcessName}.onelmodel");
 
                         if (!Directory.Exists(outputPath))
                         {
@@ -333,12 +358,32 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             }
                         }
 
+                        var finalStatus = bridge.GetLastStatusSnapshot();
+                        await _mssqlDbService.InsertLogAsync(
+                            $"[Py] Final status summary: run_id={bridge.CurrentRunId ?? "(null)"}, status={finalStatus?.Status ?? "(null)"}, phase={finalStatus?.Phase ?? "(null)"}, artifact_ready={finalStatus?.ArtifactReady}",
+                            LogLevel.Information);
+
+                        if (finalStatus?.StoppedByUser == true || string.Equals(finalStatus?.Status, "stopped", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new OperationCanceledException($"Python training stopped. run_id={bridge.CurrentRunId ?? "(null)"}");
+                        }
+
+                        if (finalStatus != null && !string.IsNullOrEmpty(finalStatus.Status) &&
+                            !string.Equals(finalStatus.Status, "completed", StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidOperationException(
+                                $"Python training did not complete successfully. status={finalStatus.Status}, phase={finalStatus.Phase}, error={finalStatus.Error}");
+                        }
+
                         string? bestModelPath = bridge.GetBestModelPath();
                         Console.WriteLine($"[Py] bestModelPath = {bestModelPath ?? "(null)"}");
                         if (string.IsNullOrEmpty(bestModelPath))
                         {
-                            Console.WriteLine("[Py] WARNING: bestModelPath is null - TrainingImageResult inference will likely fail");
-                            await _mssqlDbService.InsertLogAsync("[Py] WARNING: No best model path available after training. Check Python server logs.", LogLevel.Warning);
+                            throw new InvalidOperationException("No exported model path available after Python training.");
+                        }
+                        if (!System.IO.File.Exists(bestModelPath))
+                        {
+                            throw new FileNotFoundException($"Exported model not found: {bestModelPath}");
                         }
 
                         // ✅ 훈련 이미지 기록을 데이터베이스에 저장
@@ -396,7 +441,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             if (adms == null) continue;
 
                             string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\{adms.Name}\\";
-                            string modelName = $"{processName}.onnlmodel";
+                            string modelName = $"{processName}.onelmodel";
 
                             if (!Directory.Exists(savePath))
                             {
@@ -409,7 +454,7 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 string localPath = savePath + modelName;
                                 string clientPath = Path.Combine(parameterData.ClientModelDestination, modelName);
 
-                                var sourceModelPath = !string.IsNullOrEmpty(bestModelPath) ? bestModelPath : bestModelFullPath;
+                                var sourceModelPath = bestModelPath;
                                 if (!System.IO.File.Exists(sourceModelPath))
                                 {
                                     throw new FileNotFoundException($"Source model not found: {sourceModelPath}");
@@ -658,8 +703,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             string sizeFolder = parameterData.ImageSize == ImageSize.Large ? "LARGE" : "MIDDLE";
                             string savePath = $"{_serverSettings.EvaluationModelDirectory}\\{sizeFolder}\\{adms.Name}\\";
 
-                            // ✅ 모델명을 ProcessId.edltool로 변경
-                            string modelName = $"{processName}.edltool";
+                            // ✅ 모델명을 ProcessId.onelmodel로 변경
+                            string modelName = $"{processName}.onelmodel";
 
                             if (!Directory.Exists(savePath))
                             {
@@ -844,15 +889,28 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 }
 
                 await _mssqlDbService.InsertLogAsync("Stopping Python training via /train/cls/stop", LogLevel.Information);
-                bridge.StopTraining();
-                TrainingAiHttpBridge.SetCurrentInstance(null);
-                ToolStatusManager.SetProcessRunning(false);
+                var stopResponse = await bridge.StopTrainingAsync();
+                await _mssqlDbService.InsertLogAsync(
+                    $"Python stop response: result={stopResponse?.Result ?? "(null)"}, status={stopResponse?.Status ?? "(null)"}, run_id={stopResponse?.RunId ?? "(null)"}",
+                    LogLevel.Information);
+
+                if (string.Equals(stopResponse?.Status, "timeout", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(stopResponse?.Status, "finalizing", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Accepted(new
+                    {
+                        Message = "Python training stop was requested, but the server is still finalizing the current run.",
+                        Status = stopResponse?.Status ?? "Pending",
+                        RunId = stopResponse?.RunId
+                    });
+                }
 
                 await _mssqlDbService.InsertLogAsync("Python training stopped successfully", LogLevel.Information);
                 return Ok(new
                 {
                     Message = "Python training stopped successfully",
-                    Status = "Success"
+                    Status = stopResponse?.Status ?? "Success",
+                    RunId = stopResponse?.RunId
                 });
             }
 
