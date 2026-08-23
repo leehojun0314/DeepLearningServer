@@ -213,6 +213,10 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 if (processName.Contains("Default"))
                 {
                     Console.WriteLine($"Process {processName} is not valid.");
+                    // Release the busy flag: without this every later training
+                    // request is refused with "The tool is already running."
+                    // until the service is restarted.
+                    ToolStatusManager.SetProcessRunning(false);
                     return BadRequest("Default process name should not be included.");
                 }
                 Console.WriteLine("Foud process name: " + processName);
@@ -286,6 +290,9 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                             await _mssqlDbService.InsertLogAsync(msg, LogLevel.Error);
                             throw new InvalidOperationException(msg);
                         }
+
+                        // 이미지 복사 중에 중지 요청이 왔다면 훈련을 시작하지 않는다.
+                        bridge.ThrowIfStopRequested();
 
                         // 이미지 로딩 완료 후 훈련 시작 준비
                         record.Status = TrainingStatus.Running;
@@ -889,6 +896,11 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                 }
 
                 await _mssqlDbService.InsertLogAsync("Stopping Python training via /train/cls/stop", LogLevel.Information);
+                // Cancel locally as well as on the Python server. Without this the
+                // background training task keeps polling and never releases the
+                // busy flag, so the next training request is refused even though
+                // the run is over.
+                bridge.RequestStop();
                 var stopResponse = await bridge.StopTrainingAsync();
                 await _mssqlDbService.InsertLogAsync(
                     $"Python stop response: result={stopResponse?.Result ?? "(null)"}, status={stopResponse?.Status ?? "(null)"}, run_id={stopResponse?.RunId ?? "(null)"}",

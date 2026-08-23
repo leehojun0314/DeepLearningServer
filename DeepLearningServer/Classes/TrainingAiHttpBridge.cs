@@ -65,6 +65,10 @@ namespace DeepLearningServer.Classes
     private int _preparedImageCount;
     private bool _isTraining;
     private CancellationTokenSource? _cts;
+    // Set as soon as a stop is requested, even before TrainAsync creates _cts.
+    // Without this a stop arriving during the image-copy phase is silently lost
+    // and training starts right after the caller was told it had stopped.
+    private readonly CancellationTokenSource _stopRequestedCts = new CancellationTokenSource();
     private const int MaxStatusPollFailures = 5;
 
     /// <summary>
@@ -95,6 +99,18 @@ namespace DeepLearningServer.Classes
     public string? CurrentRunId => _currentRunId;
 
     public PyTrainStatusResponse? GetLastStatusSnapshot() => _lastStatus;
+
+    /// <summary>
+    /// True once a stop has been requested, at any point in this bridge's life -
+    /// including before training was started on the Python server.
+    /// </summary>
+    public bool IsStopRequested => _stopRequestedCts.IsCancellationRequested;
+
+    /// <summary>
+    /// Throw if a stop has been requested. Call before starting long work so a
+    /// stop that arrived during image preparation is not silently ignored.
+    /// </summary>
+    public void ThrowIfStopRequested() => _stopRequestedCts.Token.ThrowIfCancellationRequested();
 
     /// <summary>
     /// Create a new HTTP training bridge
@@ -304,13 +320,17 @@ namespace DeepLearningServer.Classes
       return count;
     }
 
-    private static List<string> CopyCategoryImagesToTemp(IEnumerable<string> sourcePaths, string tempTargetRoot)
+    private List<string> CopyCategoryImagesToTemp(IEnumerable<string> sourcePaths, string tempTargetRoot)
     {
       var copiedPaths = new List<string>();
       Directory.CreateDirectory(tempTargetRoot);
 
       foreach (var sourcePath in sourcePaths)
       {
+        // Copying a full dataset takes minutes; abort promptly on stop instead of
+        // finishing the copy and then starting a run the caller already cancelled.
+        ThrowIfStopRequested();
+
         if (!Directory.Exists(sourcePath))
         {
           continue;
@@ -326,6 +346,8 @@ namespace DeepLearningServer.Classes
 
         foreach (var file in EnumerateImageFiles(sourcePath))
         {
+          ThrowIfStopRequested();
+
           var relativePath = Path.GetRelativePath(sourcePath, file);
           var destinationFile = Path.Combine(destinationPath, relativePath);
           var destinationFileDir = Path.GetDirectoryName(destinationFile);
@@ -489,16 +511,23 @@ namespace DeepLearningServer.Classes
         throw new InvalidOperationException("category_sources is empty.");
     }
 
-    private static bool IsTerminalStatus(PyTrainStatusResponse? status)
+    // "terminated"/"killed" are what train_cls_server 1.2.7-1.2.8 report when the
+    // training worker had to be force-killed. They mean the run is over just as
+    // much as "stopped" does; missing them here left the status poll loop below
+    // spinning forever, which kept the tool flagged busy and made every later
+    // training request fail with "The tool is already running."
+    // (1.3.0+ normalises these to "stopped"; both vocabularies are accepted.)
+    internal static bool IsTerminalStatus(PyTrainStatusResponse? status)
     {
       var statusText = status?.Status?.Trim().ToLowerInvariant();
-      return statusText is "completed" or "stopped" or "failed";
+      return statusText is "completed" or "stopped" or "failed" or "terminated" or "killed" or "cancelled";
     }
 
-    private static bool IsCancelledStatus(PyTrainStatusResponse? status)
+    internal static bool IsCancelledStatus(PyTrainStatusResponse? status)
     {
       var statusText = status?.Status?.Trim().ToLowerInvariant();
-      return status?.StoppedByUser == true || statusText is "stopped" or "cancelled";
+      return status?.StoppedByUser == true
+          || statusText is "stopped" or "cancelled" or "terminated" or "killed";
     }
 
     private static bool IsFailedStatus(PyTrainStatusResponse? status)
@@ -522,7 +551,9 @@ namespace DeepLearningServer.Classes
             $"LoadImagesAsync was called but no matching folders exist under '{_dataPath}'. " +
             "Expected structure: NG/BASE|NEW/{CATEGORY}, OK/{processName}/BASE|NEW");
 
-      _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      // Linked to _stopRequestedCts so a stop requested before this point (e.g.
+      // while images were still being copied) is not lost.
+      _cts = CancellationTokenSource.CreateLinkedTokenSource(ct, _stopRequestedCts.Token);
 
       // Build request
       bool grayInput = _parameters.GrayInput ||
@@ -556,6 +587,9 @@ namespace DeepLearningServer.Classes
         CategorySources = _categorySources
       };
       ValidateTrainRequest(_lastRequest);
+
+      // Never start a run that has already been asked to stop.
+      _cts.Token.ThrowIfCancellationRequested();
 
       // Start training
       Console.WriteLine($"[TrainingAiHttpBridge] Starting training: {_baseUrl}/train/cls/start");
@@ -711,7 +745,7 @@ namespace DeepLearningServer.Classes
     /// </summary>
     public void StopTraining()
     {
-      _cts?.Cancel();
+      RequestStop();
       try
       {
         StopTrainingAsync().GetAwaiter().GetResult();
@@ -723,13 +757,34 @@ namespace DeepLearningServer.Classes
     }
 
     /// <summary>
+    /// Record that a stop was requested and cancel any work in progress.
+    /// Safe to call at any point in this bridge's life, including before
+    /// training has been started on the Python server.
+    /// </summary>
+    public void RequestStop()
+    {
+      try
+      {
+        _stopRequestedCts.Cancel();
+      }
+      catch (ObjectDisposedException)
+      {
+        // Already disposed - nothing left to cancel.
+      }
+      _cts?.Cancel();
+    }
+
+    /// <summary>
     /// Stop training asynchronously
     /// </summary>
     public async Task<PyTrainStopResponse?> StopTrainingAsync()
     {
+      // Cancel first: if the Python call throws or the server is mid-startup,
+      // the request must not be forgotten.
+      RequestStop();
       Console.WriteLine("[TrainingAiHttpBridge] Stopping training...");
       var response = await PostAsync<PyTrainStopResponse>("/train/cls/stop", new { });
-      if (response?.Status is "stopped" or "completed" or "failed")
+      if (response?.Status is "stopped" or "completed" or "failed" or "terminated" or "killed" or "not_running")
       {
         _isTraining = false;
       }
@@ -1109,6 +1164,7 @@ namespace DeepLearningServer.Classes
     {
       _cts?.Cancel();
       _cts?.Dispose();
+      _stopRequestedCts.Dispose();
       _currentRunId = null;
       CleanupTempImages();
       _client.Dispose();
