@@ -57,7 +57,8 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
     /// - ImageSize: 이미지 크기 (Middle(0) 또는 Large(1)만 지원). 훈련에 사용할 이미지 크기 설정
     /// - Categories: 분류할 카테고리 목록. 결함 유형 등 분류해야 할 클래스 이름들의 배열
     /// - IsDefaultModel: 기본 모델 여부. true인 경우 기본 모델명으로 저장됨
-    /// - ClientModelDestination: 클라이언트 모델 저장 경로. 훈련된 모델이 클라이언트에 저장될 위치
+    /// - ClientModelDestination: 클라이언트 모델 저장 경로. ServerSettings.AutoUploadModelToClient 가 true 일 때만 쓰이며,
+    ///   기본값(false)에서는 모델이 서버에만 저장되고 전송은 POST /api/model/send-remote 로 따로 요청합니다
     /// - TrainingProportion: 훈련 데이터 비율 (0~1 사이 값). 전체 데이터 중 훈련에 사용될 데이터 비율
     /// - ValidationProportion: 검증 데이터 비율 (0~1 사이 값). 전체 데이터 중 검증에 사용될 데이터 비율
     /// - TestProportion: 테스트 데이터 비율 (0~1 사이 값). 전체 데이터 중 테스트에 사용될 데이터 비율
@@ -472,7 +473,19 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                     System.IO.File.Copy(sourceModelPath, localPath, true);
                                 }
 
-                                result = await UploadModelToClientAsync(localPath, clientPath, adms.LocalIp);
+                                if (_serverSettings.AutoUploadModelToClient)
+                                {
+                                    result = await UploadModelToClientAsync(localPath, clientPath, adms.LocalIp);
+                                }
+                                else
+                                {
+                                    // 자동 전송이 꺼져 있다. 모델은 서버에만 저장되고, 클라이언트로
+                                    // 보낼 때는 POST /api/model/send-remote 를 쓴다.
+                                    result = "pending";
+                                    await _mssqlDbService.InsertLogAsync(
+                                        $"[Py] Auto upload disabled; model kept on server only: {localPath}",
+                                        LogLevel.Information);
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -718,7 +731,11 @@ public class DeepLearningController(IOptions<ServerSettings> serverSettings,
                                 Directory.CreateDirectory(savePath);
                             }
 
-                            string result = await instance.SaveModel(savePath + modelName, Path.Combine(parameterData.ClientModelDestination, modelName), adms.LocalIp);
+                            string result = await instance.SaveModel(
+                                savePath + modelName,
+                                Path.Combine(parameterData.ClientModelDestination, modelName),
+                                adms.LocalIp,
+                                _serverSettings.AutoUploadModelToClient);
 
                             if (admsProcessInfo.TryGetValue("admsProcessId", out object admsProcessId) && admsProcessId is int intAdmsProcessId)
                             {

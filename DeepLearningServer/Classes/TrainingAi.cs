@@ -832,7 +832,11 @@ public class TrainingAi
 
         Console.WriteLine("DisposeTool 완료");
     }
-    public async Task<string> SaveModel(string localPath, string remotePath, string clientIpAddress)
+    /// <param name="uploadToClient">
+    /// false 면 모델을 서버(localPath)에만 저장하고 클라이언트로 전송하지 않는다.
+    /// ServerSettings.AutoUploadModelToClient 로 제어된다.
+    /// </param>
+    public async Task<string> SaveModel(string localPath, string remotePath, string clientIpAddress, bool uploadToClient = true)
     {
         try
         {
@@ -844,8 +848,14 @@ public class TrainingAi
 
             }
 
-            // 모델 저장
+            // 모델 저장 (자동 전송 여부와 무관하게 항상 수행)
             classifier?.Save(localPath, true);
+
+            if (!uploadToClient)
+            {
+                Console.WriteLine($"자동 전송이 꺼져 있어 서버에만 저장했습니다: {localPath}");
+                return "pending";
+            }
 
             using (var client = new HttpClient())
             {

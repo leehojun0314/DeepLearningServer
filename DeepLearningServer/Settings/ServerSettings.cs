@@ -20,4 +20,11 @@ public class ServerSettings
     /// </summary>
     public bool UsePythonServer { get; set; } = false;
 
+    /// <summary>
+    /// 훈련이 끝난 뒤 학습된 모델을 해당 ADMS 의 LocalIp 로 자동 전송할지 여부.
+    /// 기본값 false — 모델은 서버의 EvaluationModelDirectory 에만 저장되고,
+    /// 클라이언트로 보낼 때는 POST /api/model/send-remote 를 사용합니다.
+    /// </summary>
+    public bool AutoUploadModelToClient { get; set; } = false;
+
 }
